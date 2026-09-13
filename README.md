@@ -41,9 +41,9 @@
 
 ## Công nghệ sử dụng
 
-- **Giao diện**: Next.js 15
+- **Giao diện**: Next.js 16 (App Router), React 19
 - **Kiểu dáng**: Tailwind CSS
-- **Xử lý ảnh**: OpenCV.js
+- **Xử lý ảnh**: OpenCV.js 4.10 (tải từ CDN jsDelivr, có kiểm tra toàn vẹn SRI)
 - **Xuất dữ liệu**: Tạo tệp CSV, xuất phiên dạng JSON
 - **Lưu trữ**: IndexedDB (phiên, kết quả, ảnh gỡ lỗi)
 
