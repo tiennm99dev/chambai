@@ -31,8 +31,10 @@ export function calculateClassStatistics(results) {
   return {
     mean: Math.round(mean * 100) / 100,
     median: Math.round(median * 100) / 100,
-    min: scores[0],
-    max: scores[scores.length - 1],
+    // Rounded like mean/median: the 0,10-điểm CV1239 Phần II tier introduces
+    // binary floating-point noise (e.g. 7 × 0.1 !== 0.7 exactly).
+    min: Math.round(scores[0] * 100) / 100,
+    max: Math.round(scores[scores.length - 1] * 100) / 100,
     count: scores.length,
     distribution,
   };

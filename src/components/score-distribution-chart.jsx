@@ -44,7 +44,7 @@ export default function ScoreDistributionChart({ results }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold">Phân phối điểm</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Phân phối điểm</h3>
         <div className="flex items-center gap-2 text-sm">
           <label className="text-gray-600">Số khoảng:</label>
           <select

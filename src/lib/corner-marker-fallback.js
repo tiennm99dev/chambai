@@ -5,63 +5,70 @@
 /** @typedef {import('./types.js').MarkerDetectionResult} MarkerDetectionResult */
 
 /**
- * Detect 4 corner markers (solid black squares) on the answer sheet.
+ * Detect 4 corner markers (solid black squares) on the answer sheet. Always computes
+ * its own RETR_LIST contours — the marker squares are nested inside the sheet border
+ * and are excluded from a caller's RETR_EXTERNAL contour set, so reusing that set
+ * left `candidates` almost always empty and this function fell straight through to
+ * the image-bounds fallback.
  * @param {OpenCVMat} thresh
  * @param {number} imageWidth
  * @param {number} imageHeight
- * @param {object} [existingContours] - reuse contours if already computed
  * @returns {MarkerDetectionResult}
  */
-export function detectCornerMarkers(thresh, imageWidth, imageHeight, existingContours) {
+export function detectCornerMarkers(thresh, imageWidth, imageHeight) {
   const cv = (typeof self !== 'undefined' && self.cv) || window.cv;
 
-  let contours = existingContours;
-  let hierarchy = null;
-  if (!contours) {
-    contours = new cv.MatVector();
-    hierarchy = new cv.Mat();
+  const contours = new cv.MatVector();
+  const hierarchy = new cv.Mat();
+
+  try {
     cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-  }
 
-  /** @type {Array<{ center: Point, area: number }>} */
-  const candidates = [];
-  const imageArea = imageWidth * imageHeight;
+    /** @type {Array<{ center: Point, area: number }>} */
+    const candidates = [];
+    const imageArea = imageWidth * imageHeight;
 
-  for (let i = 0; i < contours.size(); i++) {
-    const contour = contours.get(i);
-    const area = cv.contourArea(contour);
-    const rect = cv.boundingRect(contour);
-    const aspectRatio = rect.width / rect.height;
-    const areaRatio = area / imageArea;
+    for (let i = 0; i < contours.size(); i++) {
+      // contours.get(i) returns a JS-owned Mat copy — contours.delete() later does
+      // NOT free it, so it must be released explicitly on every loop path.
+      const contour = contours.get(i);
+      try {
+        const area = cv.contourArea(contour);
+        const rect = cv.boundingRect(contour);
+        const aspectRatio = rect.width / rect.height;
+        const areaRatio = area / imageArea;
 
-    // Corner markers: small square-ish shapes (0.03%-2% of image area)
-    if (areaRatio < 0.0003 || areaRatio > 0.02) continue;
-    if (aspectRatio < 0.6 || aspectRatio > 1.7) continue;
-    // Solidity: filled area vs bounding rect
-    if (area / (rect.width * rect.height) < 0.7) continue;
+        // Corner markers: small square-ish shapes (0.03%-2% of image area)
+        if (areaRatio < 0.0003 || areaRatio > 0.02) continue;
+        if (aspectRatio < 0.6 || aspectRatio > 1.7) continue;
+        // Solidity: filled area vs bounding rect
+        if (area / (rect.width * rect.height) < 0.7) continue;
 
-    candidates.push({ center: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, area });
-  }
+        candidates.push({ center: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, area });
+      } finally {
+        contour.delete();
+      }
+    }
 
-  if (hierarchy) {
+    const corners = findFourCorners(candidates, imageWidth, imageHeight);
+    if (corners) {
+      return buildResult(corners);
+    }
+
+    // Final fallback: image bounds with margin
+    const margin = Math.min(imageWidth, imageHeight) * 0.03;
+    return {
+      corners: [],
+      edges: candidates.map((c) => c.center),
+      boundingBox: {
+        left: margin, right: imageWidth - margin, top: margin, bottom: imageHeight - margin,
+        width: imageWidth - margin * 2, height: imageHeight - margin * 2,
+      },
+    };
+  } finally {
+    contours.delete();
     hierarchy.delete();
   }
-
-  const corners = findFourCorners(candidates, imageWidth, imageHeight);
-  if (corners) {
-    return buildResult(corners);
-  }
-
-  // Final fallback: image bounds with margin
-  const margin = Math.min(imageWidth, imageHeight) * 0.03;
-  return {
-    corners: [],
-    edges: candidates.map((c) => c.center),
-    boundingBox: {
-      left: margin, right: imageWidth - margin, top: margin, bottom: imageHeight - margin,
-      width: imageWidth - margin * 2, height: imageHeight - margin * 2,
-    },
-  };
 }
 
 /**

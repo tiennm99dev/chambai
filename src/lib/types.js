@@ -45,11 +45,13 @@
  */
 
 /**
+ * Tri-state true/false answer. `null` means the student left the sub-item blank.
+ * A blank sub-item must never compare equal to a key value and never earns credit.
  * @typedef {object} TrueFalseAnswer
- * @property {boolean} a
- * @property {boolean} b
- * @property {boolean} c
- * @property {boolean} d
+ * @property {boolean|null} a
+ * @property {boolean|null} b
+ * @property {boolean|null} c
+ * @property {boolean|null} d
  */
 
 /**
@@ -78,6 +80,8 @@
  */
 
 /**
+ * Detection output. `studentId`/`examCode` use UNKNOWN_DIGIT for any position whose
+ * bubble could not be read, so string length always equals the printed field width.
  * @typedef {object} ProcessingResult
  * @property {string} studentId
  * @property {string} examCode
@@ -86,6 +90,7 @@
  * @property {string[]} phanIII
  * @property {number} confidence
  * @property {string} [debugImageUrl]
+ * @property {boolean} [needsReview] - true when any field contains UNKNOWN_DIGIT
  */
 
 /**
@@ -100,7 +105,18 @@
  * @property {boolean} [processed]
  * @property {string} [debugImageUrl]
  * @property {ScoreResult} [score]
+ * @property {boolean} [needsReview]
+ * @property {string} [error] - Set when processing failed; such a result is never scored.
  */
+
+/**
+ * Placeholder character written into a digit string when a position could not be read.
+ * Never matches a real digit, so a partially-read field cannot be silently mis-graded.
+ */
+export const UNKNOWN_DIGIT = '?';
+
+/** Schema version for exported/persisted sessions. Bump when stored shapes change. */
+export const SCHEMA_VERSION = 3;
 
 // OpenCV.js Mat type — opaque handle, no structural definition needed
 /**
@@ -110,5 +126,3 @@
  * @property {function} delete
  * @property {function} roi
  */
-
-export {};

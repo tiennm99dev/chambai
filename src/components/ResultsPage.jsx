@@ -6,6 +6,18 @@ import { calculateClassStatistics } from '@/lib/statistics';
 import StudentDetailModal from './student-detail-modal';
 import ItemAnalysisView from './item-analysis-view';
 import ScoreDistributionChart from './score-distribution-chart';
+import HighlightUnknown from './highlight-unknown';
+
+/** Characters Excel/Sheets would otherwise interpret as a formula prefix. */
+const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
+
+function escapeCsvField(value) {
+  const str = String(value ?? '');
+  const guarded = CSV_FORMULA_PREFIX.test(str) ? `'${str}` : str;
+  // Quote (and double any embedded quote) whenever the field could otherwise
+  // shift a column or row: comma, quote, or embedded newline.
+  return /[",\n\r]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+}
 
 export default function ResultsPage({ results: rawResults, config, onResultsUpdate, onResultsClear }) {
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -14,11 +26,17 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
   const [filterText, setFilterText] = useState('');
   const [activeTab, setActiveTab] = useState('results');
 
-  // Score all results against current config
+  // Score all results against current config. A result whose image processing
+  // failed (`error` set) carries no reliable answer arrays — it must never
+  // reach calculateScore, which would either throw or fabricate a grade for it.
   const results = useMemo(() => {
     if (!config) return rawResults;
-    return rawResults.map((r) => ({ ...r, score: calculateScore(r, config) }));
+    return rawResults.map((r) => (r.error ? r : { ...r, score: calculateScore(r, config) }));
   }, [rawResults, config]);
+
+  const scoredResults = useMemo(() => results.filter((r) => !r.error), [results]);
+  const legacyPhanII = scoredResults.some((r) => r.score?.legacyPhanII);
+  const needsReviewCount = results.filter((r) => r.needsReview).length;
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -33,7 +51,7 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
     let filtered = results;
     if (filterText) {
       const lower = filterText.toLowerCase();
-      filtered = results.filter((r) => r.studentId?.toLowerCase().includes(lower));
+      filtered = results.filter((r) => r.studentId?.toLowerCase().includes(lower) || r.fileName?.toLowerCase().includes(lower));
     }
     return [...filtered].sort((a, b) => {
       let cmp = 0;
@@ -44,7 +62,7 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
     });
   }, [results, sortKey, sortDir, filterText]);
 
-  const stats = useMemo(() => calculateClassStatistics(results), [results]);
+  const stats = useMemo(() => calculateClassStatistics(scoredResults), [scoredResults]);
 
   const clearResults = () => {
     if (confirm('Bạn có chắc chắn muốn xóa tất cả kết quả?')) {
@@ -55,16 +73,16 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
   const exportToCSV = () => {
     if (results.length === 0) return;
     const headers = ['SBD', 'Ma de', 'Phan I', 'Phan II', 'Phan III', 'Tong diem', 'Diem toi da', 'Phan tram'];
-    const csvContent = [
-      headers.join(','),
-      ...sortedResults.map((r) => [
-        r.studentId, r.examCode || '',
-        r.score?.phanI ?? 0, r.score?.phanII ?? 0, r.score?.phanIII ?? 0,
-        r.score?.total ?? 0, r.score?.maxTotal ?? 0, r.score?.percentage ?? 0,
-      ].join(',')),
-    ].join('\n');
+    const rows = sortedResults.map((r) => [
+      r.studentId, r.examCode || '',
+      r.score?.phanI ?? 0, r.score?.phanII ?? 0, r.score?.phanIII ?? 0,
+      r.score?.total ?? 0, r.score?.maxTotal ?? 0, r.score?.percentage ?? 0,
+    ]);
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map(escapeCsvField).join(','))
+      .join('\n');
 
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `ket_qua_thi_${new Date().toISOString().split('T')[0]}.csv`;
@@ -73,7 +91,8 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
   };
 
   const selectedData = results.find((r) => r.id === selectedStudent);
-  const sortArrow = (key) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  const sortArrow = (key) => sortKey === key ? (sortDir === 'asc' ? '↑' : '↓') : '';
+  const ariaSort = (key) => sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -100,6 +119,19 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
         </div>
       ) : (
         <div>
+          {legacyPhanII && (
+            <div className="no-print mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+              ⚠ Phiên này đang chấm Phần II theo công thức cũ (cộng điểm tuyến tính theo từng ý đúng), vì được tạo trước khi
+              áp dụng bậc thang điểm chính thức (1 ý = 10%, 2 ý = 25%, 3 ý = 50%, 4 ý = 100% điểm tối đa). Điểm đã ghi nhận sẽ
+              không tự thay đổi — muốn chấm lại theo công thức mới, hãy tạo phiên mới và xử lý lại ảnh.
+            </div>
+          )}
+          {needsReviewCount > 0 && (
+            <div className="no-print mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+              ⚠ {needsReviewCount} bài cần kiểm tra thủ công (có ô không đọc được rõ). Xem cột &quot;Cần kiểm tra&quot; bên dưới.
+            </div>
+          )}
+
           {/* Statistics */}
           {stats && <StatisticsSummary stats={stats} />}
 
@@ -128,7 +160,7 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
           {activeTab === 'results' && (
             <>
               <div className="mb-4 no-print">
-                <input type="text" placeholder="Tìm theo SBD..." value={filterText}
+                <input type="text" placeholder="Tìm theo SBD hoặc tên file..." value={filterText}
                   onChange={(e) => setFilterText(e.target.value)}
                   className="w-64 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <span className="text-sm text-gray-500 ml-3">{sortedResults.length} / {results.length} kết quả</span>
@@ -138,27 +170,48 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
                 <table className="min-w-full border border-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <ThBtn onClick={() => handleSort('studentId')}>SBD{sortArrow('studentId')}</ThBtn>
+                      <ThBtn onClick={() => handleSort('studentId')} ariaSort={ariaSort('studentId')}>SBD{sortArrow('studentId')}</ThBtn>
                       <Th>Mã đề</Th><Th>Phần I</Th><Th>Phần II</Th><Th>Phần III</Th>
-                      <ThBtn onClick={() => handleSort('total')}>Tổng{sortArrow('total')}</ThBtn>
-                      <ThBtn onClick={() => handleSort('percentage')}>%{sortArrow('percentage')}</ThBtn>
+                      <ThBtn onClick={() => handleSort('total')} ariaSort={ariaSort('total')}>Tổng{sortArrow('total')}</ThBtn>
+                      <ThBtn onClick={() => handleSort('percentage')} ariaSort={ariaSort('percentage')}>%{sortArrow('percentage')}</ThBtn>
+                      <Th>Trạng thái</Th>
                       <Th>Chi tiết</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedResults.map((result) => (
-                      <tr key={result.id} className="border-t border-gray-200 hover:bg-gray-50">
-                        <Td>{result.studentId}</Td>
-                        <Td>{result.examCode || '-'}</Td>
-                        <Td>{result.score?.phanI ?? 0}</Td>
-                        <Td>{result.score?.phanII ?? 0}</Td>
-                        <Td>{result.score?.phanIII ?? 0}</Td>
-                        <Td className="font-semibold">{result.score?.total ?? 0}/{result.score?.maxTotal ?? 0}</Td>
-                        <Td><ScoreBadge percentage={result.score?.percentage ?? 0} /></Td>
-                        <Td>
-                          <button onClick={() => setSelectedStudent(result.id)} className="text-blue-600 hover:text-blue-800 text-sm no-print">Xem</button>
-                        </Td>
-                      </tr>
+                      result.error ? (
+                        <tr key={result.id} className="border-t border-gray-200 bg-red-50">
+                          <Td colSpan={7} className="text-red-700">
+                            Lỗi xử lý — {result.fileName || 'không rõ file'}: {result.error}
+                          </Td>
+                          <Td>
+                            <button onClick={() => onResultsUpdate(rawResults.filter((r) => r.id !== result.id))} className="text-red-600 hover:text-red-800 text-sm no-print">
+                              Xóa
+                            </button>
+                          </Td>
+                        </tr>
+                      ) : (
+                        <tr key={result.id} className={`border-t border-gray-200 hover:bg-gray-50 ${result.needsReview ? 'bg-amber-50' : ''}`}>
+                          <Td><HighlightUnknown value={result.studentId} /></Td>
+                          <Td>{result.examCode ? <HighlightUnknown value={result.examCode} /> : '-'}</Td>
+                          <Td>{result.score?.phanI ?? 0}</Td>
+                          <Td>{result.score?.phanII ?? 0}</Td>
+                          <Td>{result.score?.phanIII ?? 0}</Td>
+                          <Td className="font-semibold">{result.score?.total ?? 0}/{result.score?.maxTotal ?? 0}</Td>
+                          <Td><ScoreBadge percentage={result.score?.percentage ?? 0} /></Td>
+                          <Td>
+                            {result.needsReview && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                ⚠ Cần kiểm tra
+                              </span>
+                            )}
+                          </Td>
+                          <Td>
+                            <button onClick={() => setSelectedStudent(result.id)} className="text-blue-600 hover:text-blue-800 text-sm no-print">Xem</button>
+                          </Td>
+                        </tr>
+                      )
                     ))}
                   </tbody>
                 </table>
@@ -169,18 +222,18 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
           {/* Item Analysis Tab */}
           {activeTab === 'analysis' && (
             <div className="mb-8">
-              <ItemAnalysisView results={results} config={config} />
+              <ItemAnalysisView results={scoredResults} config={config} />
             </div>
           )}
 
           {/* Score Distribution Tab */}
           {activeTab === 'distribution' && (
             <div className="mb-8">
-              <ScoreDistributionChart results={results} />
+              <ScoreDistributionChart results={scoredResults} />
             </div>
           )}
 
-          {selectedStudent && selectedData && (
+          {selectedStudent && selectedData && !selectedData.error && (
             <StudentDetailModal
               student={selectedData}
               testConfig={config}
@@ -188,7 +241,6 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
               onResultUpdate={(corrected) => {
                 const updated = rawResults.map((r) => r.id === corrected.id ? corrected : r);
                 onResultsUpdate(updated);
-                setSelectedStudent(null);
               }}
             />
           )}
@@ -204,7 +256,7 @@ function StatisticsSummary({ stats }) {
   const maxBucket = Math.max(...Object.values(stats.distribution), 1);
   return (
     <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
-      <h3 className="text-lg font-semibold mb-3">Thống kê lớp</h3>
+      <h3 className="text-lg font-semibold mb-3 text-gray-900">Thống kê lớp</h3>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
         <StatCard label="Sĩ số" value={stats.count} />
         <StatCard label="Điểm TB" value={stats.mean} />
@@ -217,7 +269,7 @@ function StatisticsSummary({ stats }) {
           <div key={range} className="flex-1 flex flex-col items-center">
             <div className="w-full bg-blue-500 rounded-t" style={{ height: `${(count / maxBucket) * 48}px`, minHeight: count > 0 ? '4px' : '0' }} />
             <span className="text-xs text-gray-500 mt-1">{range}%</span>
-            <span className="text-xs font-medium">{count}</span>
+            <span className="text-xs font-medium text-gray-900">{count}</span>
           </div>
         ))}
       </div>
@@ -239,11 +291,23 @@ function StatCard({ label, value }) {
 function Th({ children }) {
   return <th className="px-3 py-2 text-left text-sm font-medium text-gray-700">{children}</th>;
 }
-function ThBtn({ children, onClick }) {
-  return <th className="px-3 py-2 text-left text-sm font-medium text-gray-700 cursor-pointer hover:text-blue-600" onClick={onClick}>{children}</th>;
+function ThBtn({ children, onClick, ariaSort }) {
+  return (
+    <th className="px-3 py-2 text-left text-sm font-medium text-gray-700" aria-sort={ariaSort}>
+      <button type="button" onClick={onClick} className="hover:text-blue-600 font-medium">
+        {children}
+      </button>
+    </th>
+  );
 }
-function Td({ children, className = '' }) {
-  return <td className={`px-3 py-2 text-sm text-gray-900 ${className}`}>{children}</td>;
+/**
+ * @param {object} props
+ * @param {import('react').ReactNode} props.children
+ * @param {string} [props.className]
+ * @param {number} [props.colSpan]
+ */
+function Td({ children, className = '', colSpan }) {
+  return <td colSpan={colSpan} className={`px-3 py-2 text-sm text-gray-900 ${className}`}>{children}</td>;
 }
 function ScoreBadge({ percentage }) {
   const color = percentage >= 80 ? 'bg-green-100 text-green-800' :

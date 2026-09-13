@@ -71,7 +71,14 @@ export function generateBubbleGrid(markers, imageWidth, imageHeight) {
   return bubbles;
 }
 
-const BUBBLE_SIZE_RATIO = 0.012; // bubble size relative to sheet width
+// Bubble (printed ring) diameter as a fraction of sheet width. Measured directly from
+// assets/cv1239-thpt-answer-sheet-template.png (1638x2339px, 200dpi): connected-component
+// analysis of the printed circle outlines gives a ring outer diameter of ~23.5-25px
+// (studentId grid: 23.5px; Phần I option grid: 24.5px), i.e. ~0.0143-0.015 of sheet width.
+// 0.016 covers the full ring with a small margin while staying under the tightest
+// neighbor pitch measured (studentId row pitch ~29.8px, ratio ~0.0182) so the ROI
+// never bleeds into the adjacent row.
+const BUBBLE_SIZE_RATIO = 0.016;
 
 /**
  * @param {{ width: number }} box
@@ -98,9 +105,11 @@ function generateStudentIdBubbles(bubbles, area, abs, box) {
         area.x + col * colSpacing + colSpacing * 0.5,
         area.y + (row + 1) * rowSpacing
       );
+      // pos is the bubble center; consumers (measureBubbleFill, debug overlay) treat
+      // bubble.x/y as the ROI top-left, so shift back by half the bubble size.
       bubbles.push({
-        x: pos.x,
-        y: pos.y,
+        x: pos.x - size / 2,
+        y: pos.y - size / 2,
         width: size,
         height: size,
         area: size * size,
@@ -131,8 +140,8 @@ function generateExamCodeBubbles(bubbles, area, abs, box) {
         area.y + (row + 1) * rowSpacing
       );
       bubbles.push({
-        x: pos.x,
-        y: pos.y,
+        x: pos.x - size / 2,
+        y: pos.y - size / 2,
         width: size,
         height: size,
         area: size * size,
@@ -170,8 +179,8 @@ function generatePhanIBubbles(bubbles, area, abs, box) {
           area.y + (qRow + 1) * rowSpacing
         );
         bubbles.push({
-          x: pos.x,
-          y: pos.y,
+          x: pos.x - size / 2,
+          y: pos.y - size / 2,
           width: size,
           height: size,
           area: size * size,
@@ -214,8 +223,8 @@ function generatePhanIIBubbles(bubbles, area, abs, box) {
         area.y + qRow * rowHeight + (sub + 1) * subRowSpacing
       );
       bubbles.push({
-        x: posTrue.x,
-        y: posTrue.y,
+        x: posTrue.x - size / 2,
+        y: posTrue.y - size / 2,
         width: size,
         height: size,
         area: size * size,
@@ -232,8 +241,8 @@ function generatePhanIIBubbles(bubbles, area, abs, box) {
         area.y + qRow * rowHeight + (sub + 1) * subRowSpacing
       );
       bubbles.push({
-        x: posFalse.x,
-        y: posFalse.y,
+        x: posFalse.x - size / 2,
+        y: posFalse.y - size / 2,
         width: size,
         height: size,
         area: size * size,
@@ -278,8 +287,8 @@ function generatePhanIIIBubbles(bubbles, area, abs, box) {
           area.y + (rowIdx + 1) * rowSpacing
         );
         bubbles.push({
-          x: pos.x,
-          y: pos.y,
+          x: pos.x - size / 2,
+          y: pos.y - size / 2,
           width: size,
           height: size,
           area: size * size,

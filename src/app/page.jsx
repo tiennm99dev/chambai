@@ -9,7 +9,7 @@ import SessionList from '@/components/session-list';
 import SessionHeader from '@/components/session-header';
 import { clearDebugImages } from '@/lib/indexed-db-store';
 import { getAllSessions, saveSession, deleteSession } from '@/lib/indexed-db-sessions';
-import { getSessionResults, saveResults, deleteSessionResults } from '@/lib/indexed-db-results';
+import { getSessionResults, replaceSessionResults, deleteSessionResults } from '@/lib/indexed-db-results';
 import { migrateFromLocalStorage } from '@/lib/local-storage-migration';
 
 const DEFAULT_CONFIG = {
@@ -23,6 +23,13 @@ const DEFAULT_CONFIG = {
   },
 };
 
+// DEFAULT_CONFIG's nested objects must never be handed out by reference — a
+// shared reference here previously let an in-memory "unsaved" edit on one
+// session mutate the default object used to seed every other new session.
+function cloneDefaultConfig() {
+  return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+}
+
 export default function Home() {
   const [sessions, setSessions] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
@@ -31,6 +38,22 @@ export default function Home() {
   const [results, setResults] = useState([]);
   const [configSaved, setConfigSaved] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [storageError, setStorageError] = useState(null);
+
+  // Wraps every IndexedDB write/read used by page-level handlers: on failure
+  // the app must never look like it saved when it didn't, so surface a
+  // blocking Vietnamese message instead of losing the write silently.
+  const runPersist = useCallback(async (fn, failureMessage) => {
+    try {
+      const value = await fn();
+      return { ok: true, value };
+    } catch (err) {
+      console.error('IndexedDB operation failed:', err);
+      setStorageError(failureMessage);
+      return { ok: false, value: undefined };
+    }
+  }, []);
 
   // Boot: migrate localStorage, then load sessions
   useEffect(() => {
@@ -41,6 +64,7 @@ export default function Home() {
         setSessions(allSessions);
       } catch (err) {
         console.error('Failed to load sessions:', err);
+        setStorageError('Không tải được danh sách phiên đã lưu. Vui lòng tải lại trang.');
       } finally {
         setLoading(false);
       }
@@ -50,14 +74,16 @@ export default function Home() {
   // Load session data when active session changes
   const loadSession = useCallback(async (session) => {
     setActiveSession(session);
-    setConfig(session.config || DEFAULT_CONFIG);
+    setConfig(session.config || cloneDefaultConfig());
     setConfigSaved(true);
     setCurrentPage('config');
     try {
       const sessionResults = await getSessionResults(session.id);
       setResults(sessionResults);
-    } catch {
+    } catch (err) {
+      console.error('Failed to load session results:', err);
       setResults([]);
+      setStorageError('Không tải được kết quả đã lưu của phiên này.');
     }
   }, []);
 
@@ -66,18 +92,25 @@ export default function Home() {
       id: `session_${Date.now()}`,
       name,
       date: new Date().toISOString().split('T')[0],
-      config: DEFAULT_CONFIG,
+      config: cloneDefaultConfig(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    await saveSession(session);
-    setSessions((prev) => [...prev, session]);
-    loadSession(session);
+    const { ok, value: saved } = await runPersist(
+      () => saveSession(session),
+      'Không tạo được phiên mới trong bộ nhớ trình duyệt. Vui lòng thử lại.'
+    );
+    if (!ok) return;
+    setSessions((prev) => [...prev, saved]);
+    loadSession(saved);
   };
 
   const handleDeleteSession = async (id) => {
-    await deleteSession(id);
-    await deleteSessionResults(id);
+    const { ok } = await runPersist(async () => {
+      await deleteSession(id);
+      await deleteSessionResults(id);
+    }, 'Không xóa được phiên. Vui lòng thử lại.');
+    if (!ok) return;
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (activeSession?.id === id) {
       setActiveSession(null);
@@ -89,61 +122,84 @@ export default function Home() {
     setActiveSession(null);
     setResults([]);
     setConfigSaved(false);
-    const allSessions = await getAllSessions();
-    setSessions(allSessions);
+    const { ok, value } = await runPersist(
+      () => getAllSessions(),
+      'Không tải được danh sách phiên. Vui lòng tải lại trang.'
+    );
+    if (ok) setSessions(value);
+  };
+
+  const handleConfigChange = (newConfig) => {
+    setConfig(newConfig);
+    // Any edit invalidates the last save — Navigation must stop showing step 1
+    // as done until the teacher saves again, otherwise processing/results can
+    // silently run against a key that was never persisted.
+    setConfigSaved(false);
   };
 
   const handleConfigSave = async (newConfig) => {
     setConfig(newConfig);
-    setConfigSaved(true);
-    if (activeSession) {
-      const updated = { ...activeSession, config: newConfig, updatedAt: Date.now() };
-      await saveSession(updated);
-      setActiveSession(updated);
-      setSessions((prev) => prev.map((s) => s.id === updated.id ? updated : s));
+    if (!activeSession) {
+      setConfigSaved(true);
+      return;
     }
+    const { ok, value: saved } = await runPersist(
+      () => saveSession({ ...activeSession, config: newConfig, updatedAt: Date.now() }),
+      'Không lưu được cấu hình vào bộ nhớ trình duyệt. Vui lòng thử lại.'
+    );
+    if (!ok) return;
+    setConfigSaved(true);
+    setActiveSession(saved);
+    setSessions((prev) => prev.map((s) => (s.id === saved.id ? saved : s)));
   };
 
+  // Every write below goes through replaceSessionResults, which clears and
+  // rewrites a session's results in one IndexedDB transaction — a separate
+  // delete-then-save pair is not atomic and can lose or resurrect rows if a
+  // batch is interrupted between the two calls.
+  const persistResults = useCallback(async (list) => {
+    if (!activeSession) return;
+    const toSave = list.map(({ debugImageUrl, ...rest }) => rest);
+    await runPersist(
+      () => replaceSessionResults(activeSession.id, toSave),
+      'Không lưu được kết quả vào bộ nhớ trình duyệt. Vui lòng xuất CSV ngay để tránh mất dữ liệu.'
+    );
+  }, [activeSession, runPersist]);
+
   const handleResultsAdd = async (newResults) => {
-    const withSession = newResults.map((r) => ({
-      ...r,
-      sessionId: activeSession?.id,
-    }));
-    setResults((prev) => [...prev, ...withSession]);
-    if (activeSession) {
-      // Strip debugImageUrl before IndexedDB (stored separately)
-      const toSave = withSession.map(({ debugImageUrl, ...rest }) => rest);
-      await saveResults(toSave);
-    }
+    const withSession = newResults.map((r) => ({ ...r, sessionId: activeSession?.id }));
+    let merged = withSession;
+    setResults((prev) => {
+      merged = [...prev, ...withSession];
+      return merged;
+    });
+    await persistResults(merged);
   };
 
   const handleResultsUpdate = async (updatedResults) => {
     setResults(updatedResults);
-    if (activeSession) {
-      const toSave = updatedResults.map(({ debugImageUrl, ...rest }) => rest);
-      await saveResults(toSave);
-    }
+    await persistResults(updatedResults);
   };
 
   const handleResultsClear = async () => {
     setResults([]);
-    if (activeSession) {
-      await deleteSessionResults(activeSession.id);
-    }
-    clearDebugImages().catch(() => {});
+    await persistResults([]);
+    clearDebugImages().catch((err) => console.error('Không xóa được ảnh debug đã lưu:', err));
   };
 
   const handleResetAll = async () => {
-    setConfig(DEFAULT_CONFIG);
+    const cleared = cloneDefaultConfig();
+    setConfig(cleared);
     setResults([]);
     setConfigSaved(false);
     if (activeSession) {
-      await deleteSessionResults(activeSession.id);
-      const updated = { ...activeSession, config: DEFAULT_CONFIG, updatedAt: Date.now() };
-      await saveSession(updated);
-      setActiveSession(updated);
+      const { ok, value: saved } = await runPersist(async () => {
+        await replaceSessionResults(activeSession.id, []);
+        return saveSession({ ...activeSession, config: cleared, updatedAt: Date.now() });
+      }, 'Không đặt lại được phiên trong bộ nhớ trình duyệt. Vui lòng thử lại.');
+      if (ok) setActiveSession(saved);
     }
-    clearDebugImages().catch(() => {});
+    clearDebugImages().catch((err) => console.error('Không xóa được ảnh debug đã lưu:', err));
   };
 
   if (loading) {
@@ -163,7 +219,7 @@ export default function Home() {
         return (
           <ConfigurationPage
             config={config}
-            onConfigChange={setConfig}
+            onConfigChange={handleConfigChange}
             onSave={handleConfigSave}
             onResetAll={handleResetAll}
           />
@@ -173,6 +229,7 @@ export default function Home() {
           <UploadPage
             config={config}
             onResultsAdd={handleResultsAdd}
+            onProcessingStateChange={setBatchProcessing}
           />
         );
       case 'results':
@@ -201,6 +258,19 @@ export default function Home() {
           </p>
         </div>
 
+        {storageError && (
+          <div role="alert" className="no-print mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm font-medium flex items-start justify-between gap-3">
+            <span>{storageError}</span>
+            <button
+              onClick={() => setStorageError(null)}
+              aria-label="Đóng thông báo lỗi"
+              className="text-red-600 hover:text-red-800 font-bold leading-none"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {!activeSession ? (
           <SessionList
             sessions={sessions}
@@ -210,12 +280,13 @@ export default function Home() {
           />
         ) : (
           <>
-            <SessionHeader session={activeSession} onBack={handleBackToList} />
+            <SessionHeader session={activeSession} onBack={handleBackToList} disabled={batchProcessing} />
             <Navigation
               currentPage={currentPage}
               onPageChange={setCurrentPage}
               configSaved={configSaved}
               hasResults={results.length > 0}
+              locked={batchProcessing}
             />
             <div className="mt-8">
               {renderPage()}

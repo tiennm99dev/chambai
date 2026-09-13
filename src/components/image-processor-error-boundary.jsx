@@ -15,6 +15,10 @@ export default class ImageProcessorErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('ImageProcessor error:', error, info);
+    // A render crash here would otherwise leave the batch-processing promise
+    // pending forever (nothing left to call onProcessingComplete) — let the
+    // caller settle it with an error marker.
+    this.props.onError?.(error);
   }
 
   render() {

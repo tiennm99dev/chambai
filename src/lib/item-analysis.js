@@ -1,9 +1,17 @@
 // Per-question item analysis: correct%, wrong%, blank%, difficulty rating
+import { normalizePhanIIIAnswer } from './scoring.js';
+
+/** @typedef {import('./types.js').TestConfig} TestConfig */
+/** @typedef {import('./types.js').StudentResult} StudentResult */
+/** @typedef {import('./types.js').ScoreResult} ScoreResult */
+/** @typedef {StudentResult & { score?: ScoreResult }} ScoredStudentResult */
+
+const SUB_OPTIONS = /** @type {const} */ (['a', 'b', 'c', 'd']);
 
 /**
  * Analyze per-question performance across all students.
- * @param {object[]} results - scored student results
- * @param {object} config - test configuration with answer keys
+ * @param {ScoredStudentResult[]} results - scored student results
+ * @param {TestConfig} config - test configuration with answer keys
  * @returns {Array<{ question: number, section: string, correctPct: number, wrongPct: number, blankPct: number, commonWrong: string, difficulty: string }>}
  */
 export function analyzeItems(results, config) {
@@ -14,8 +22,12 @@ export function analyzeItems(results, config) {
   // Phần I — multiple choice
   for (let q = 0; q < config.phanI.questionCount; q++) {
     const correct = config.phanI.answers[q];
+    // An unconfigured key means "no answer set for this question", not "every
+    // student got it wrong" — skip rather than reporting a false 0%/"Khó".
+    if (!correct) continue;
     let correctCount = 0;
     let blankCount = 0;
+    /** @type {Record<string, number>} */
     const wrongCounts = {};
 
     for (const r of results) {
@@ -31,12 +43,15 @@ export function analyzeItems(results, config) {
       : '-';
 
     const correctPct = Math.round((correctCount / total) * 100);
+    const blankPct = Math.round((blankCount / total) * 100);
     items.push({
       question: q + 1,
       section: 'I',
       correctPct,
-      wrongPct: Math.round(((total - correctCount - blankCount) / total) * 100),
-      blankPct: Math.round((blankCount / total) * 100),
+      // Derived from the already-rounded percentages (not independently
+      // rounded) so the three always sum to exactly 100.
+      wrongPct: 100 - correctPct - blankPct,
+      blankPct,
       commonWrong,
       difficulty: getDifficulty(correctPct),
     });
@@ -47,24 +62,31 @@ export function analyzeItems(results, config) {
     const correct = config.phanII.answers[q];
     if (!correct) continue;
     let correctCount = 0;
-    let totalSubs = 0;
+    let blankSubs = 0;
+    // Denominator is total students × 4 sub-items, matching the total/blank
+    // convention used by Phần I and III, instead of silently shrinking when
+    // students are skipped for being blank.
+    const totalSubs = total * 4;
 
     for (const r of results) {
       const ans = r.phanII?.[q];
-      if (!ans) continue;
-      for (const sub of ['a', 'b', 'c', 'd']) {
-        totalSubs++;
-        if (ans[sub] === correct[sub]) correctCount++;
+      for (const sub of SUB_OPTIONS) {
+        const value = ans ? ans[sub] : null;
+        // A blank sub-item (null) must never be credited as correct, even
+        // when the key itself is false.
+        if (value === null || value === undefined) { blankSubs++; continue; }
+        if (value === correct[sub]) correctCount++;
       }
     }
 
     const correctPct = totalSubs > 0 ? Math.round((correctCount / totalSubs) * 100) : 0;
+    const blankPct = totalSubs > 0 ? Math.round((blankSubs / totalSubs) * 100) : 0;
     items.push({
       question: q + 1,
       section: 'II',
       correctPct,
-      wrongPct: 100 - correctPct,
-      blankPct: 0,
+      wrongPct: 100 - correctPct - blankPct,
+      blankPct,
       commonWrong: '-',
       difficulty: getDifficulty(correctPct),
     });
@@ -73,22 +95,28 @@ export function analyzeItems(results, config) {
   // Phần III — numerical
   for (let q = 0; q < config.phanIII.questionCount; q++) {
     const correct = config.phanIII.answers[q];
+    if (!correct) continue;
     let correctCount = 0;
     let blankCount = 0;
+    const normalizedCorrect = normalizePhanIIIAnswer(correct);
 
     for (const r of results) {
       const ans = r.phanIII?.[q];
       if (!ans) { blankCount++; continue; }
-      if (ans === correct) correctCount++;
+      const normalizedAns = normalizePhanIIIAnswer(ans);
+      if (normalizedAns !== null && normalizedCorrect !== null && normalizedAns === normalizedCorrect) {
+        correctCount++;
+      }
     }
 
     const correctPct = Math.round((correctCount / total) * 100);
+    const blankPct = Math.round((blankCount / total) * 100);
     items.push({
       question: q + 1,
       section: 'III',
       correctPct,
-      wrongPct: Math.round(((total - correctCount - blankCount) / total) * 100),
-      blankPct: Math.round((blankCount / total) * 100),
+      wrongPct: 100 - correctPct - blankPct,
+      blankPct,
       commonWrong: '-',
       difficulty: getDifficulty(correctPct),
     });

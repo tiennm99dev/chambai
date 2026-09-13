@@ -3,13 +3,22 @@
 
 const DB_NAME = 'chambai';
 const DB_VERSION = 2;
+const STORE_NAME = 'debugImages';
+
+/** Memoized connection so operations reuse one open handle instead of opening a fresh one each call.
+ * @type {Promise<IDBDatabase>|null} */
+let dbPromise = null;
 
 /**
  * Open (or create) the IndexedDB database with versioned schema.
+ * The connection is memoized: concurrent/subsequent calls reuse the same
+ * open connection. The promise is cleared on any failure/blocked/version
+ * change so a later call opens a fresh connection instead of reusing a dead one.
  * @returns {Promise<IDBDatabase>}
  */
 export function openDB() {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (event) => {
       const db = request.result;
@@ -25,9 +34,42 @@ export function openDB() {
         resultStore.createIndex('sessionId', 'sessionId');
       }
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    // Another connection (e.g. an older tab) is holding the previous version
+    // and did not close in time for this upgrade. Reject instead of leaving
+    // the promise pending forever, which would otherwise hang the app on its
+    // loading spinner with no error.
+    request.onblocked = () => {
+      dbPromise = null;
+      reject(new Error('Cơ sở dữ liệu đang bị khóa bởi một tab khác. Hãy đóng các tab khác của ứng dụng rồi thử lại.'));
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      // A newer tab wants to upgrade the schema; close so it isn't blocked,
+      // and drop the memoized promise so this tab reopens on next use.
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
+    request.onerror = () => {
+      dbPromise = null;
+      reject(request.error);
+    };
   });
+  return dbPromise;
+}
+
+/**
+ * Build the rejection reason for a transaction that aborted without a
+ * preceding request error (explicit abort, storage-quota eviction, private
+ * browsing shutdown, etc). Without this, such a transaction never rejects
+ * and the calling promise hangs forever.
+ * @param {IDBTransaction} tx
+ * @returns {Error}
+ */
+export function txAbortError(tx) {
+  return tx.error ?? new DOMException('Giao dịch đã bị hủy', 'AbortError');
 }
 
 /**
@@ -43,6 +85,7 @@ export async function saveDebugImage(id, dataUrl) {
     tx.objectStore(STORE_NAME).put({ id, dataUrl });
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(txAbortError(tx));
   });
 }
 
@@ -58,6 +101,7 @@ export async function getDebugImage(id) {
     const request = tx.objectStore(STORE_NAME).get(id);
     request.onsuccess = () => resolve(request.result?.dataUrl ?? null);
     request.onerror = () => reject(request.error);
+    tx.onabort = () => reject(txAbortError(tx));
   });
 }
 
@@ -73,6 +117,7 @@ export async function deleteDebugImage(id) {
     tx.objectStore(STORE_NAME).delete(id);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(txAbortError(tx));
   });
 }
 
@@ -87,5 +132,6 @@ export async function clearDebugImages() {
     tx.objectStore(STORE_NAME).clear();
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(txAbortError(tx));
   });
 }

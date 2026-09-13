@@ -1,5 +1,5 @@
 import { Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
+import OpenCvLoader from "@/components/opencv-loader";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,10 +23,7 @@ export default function RootLayout({ children }) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Script
-          src="https://docs.opencv.org/4.9.0/opencv.js"
-          strategy="beforeInteractive"
-        />
+        <OpenCvLoader />
         {children}
       </body>
     </html>

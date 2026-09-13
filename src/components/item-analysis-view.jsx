@@ -13,11 +13,10 @@ export default function ItemAnalysisView({ results, config }) {
 
   const items = useMemo(() => analyzeItems(results, config), [results, config]);
 
-  const filtered = filterSection === 'all'
-    ? items
-    : items.filter((i) => i.section === filterSection);
-
   const sorted = useMemo(() => {
+    const filtered = filterSection === 'all'
+      ? items
+      : items.filter((i) => i.section === filterSection);
     return [...filtered].sort((a, b) => {
       let cmp = 0;
       if (sortKey === 'question') cmp = a.question - b.question;
@@ -26,7 +25,7 @@ export default function ItemAnalysisView({ results, config }) {
       else if (sortKey === 'difficulty') cmp = a.correctPct - b.correctPct;
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [filtered, sortKey, sortDir]);
+  }, [items, filterSection, sortKey, sortDir]);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -34,6 +33,7 @@ export default function ItemAnalysisView({ results, config }) {
   };
 
   const arrow = (key) => (sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '');
+  const ariaSort = (key) => (sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none');
 
   if (items.length === 0) {
     return <p className="text-gray-500 text-center py-4">Không có dữ liệu phân tích.</p>;
@@ -42,7 +42,7 @@ export default function ItemAnalysisView({ results, config }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <h3 className="text-lg font-semibold">Phân tích theo câu hỏi</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Phân tích theo câu hỏi</h3>
         <select
           value={filterSection}
           onChange={(e) => setFilterSection(e.target.value)}
@@ -59,13 +59,13 @@ export default function ItemAnalysisView({ results, config }) {
         <table className="min-w-full border border-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <Th onClick={() => handleSort('question')}>Câu{arrow('question')}</Th>
+              <Th onClick={() => handleSort('question')} ariaSort={ariaSort('question')}>Câu{arrow('question')}</Th>
               <Th>Phần</Th>
-              <Th onClick={() => handleSort('correctPct')}>Đúng%{arrow('correctPct')}</Th>
-              <Th onClick={() => handleSort('wrongPct')}>Sai%{arrow('wrongPct')}</Th>
+              <Th onClick={() => handleSort('correctPct')} ariaSort={ariaSort('correctPct')}>Đúng%{arrow('correctPct')}</Th>
+              <Th onClick={() => handleSort('wrongPct')} ariaSort={ariaSort('wrongPct')}>Sai%{arrow('wrongPct')}</Th>
               <Th>Trống%</Th>
               <Th>Sai phổ biến</Th>
-              <Th onClick={() => handleSort('difficulty')}>Độ khó{arrow('difficulty')}</Th>
+              <Th onClick={() => handleSort('difficulty')} ariaSort={ariaSort('difficulty')}>Độ khó{arrow('difficulty')}</Th>
             </tr>
           </thead>
           <tbody>
@@ -99,11 +99,23 @@ export default function ItemAnalysisView({ results, config }) {
   );
 }
 
-function Th({ children, onClick }) {
-  const cls = onClick
-    ? 'px-3 py-2 text-left font-medium text-gray-700 cursor-pointer hover:text-blue-600'
-    : 'px-3 py-2 text-left font-medium text-gray-700';
-  return <th className={cls} onClick={onClick}>{children}</th>;
+/**
+ * @param {object} props
+ * @param {import('react').ReactNode} props.children
+ * @param {() => void} [props.onClick] - omitted for non-sortable columns
+ * @param {string} [props.ariaSort]
+ */
+function Th({ children, onClick, ariaSort }) {
+  if (!onClick) {
+    return <th className="px-3 py-2 text-left font-medium text-gray-700">{children}</th>;
+  }
+  return (
+    <th className="px-3 py-2 text-left font-medium text-gray-700" aria-sort={ariaSort}>
+      <button type="button" onClick={onClick} className="hover:text-blue-600 font-medium">
+        {children}
+      </button>
+    </th>
+  );
 }
 
 function DifficultyBadge({ difficulty }) {

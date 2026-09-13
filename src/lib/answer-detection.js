@@ -2,18 +2,28 @@
 /** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
 /** @typedef {import('./types.js').Bubble} Bubble */
 /** @typedef {import('./types.js').TrueFalseAnswer} TrueFalseAnswer */
-import { measureBubbleFill } from './image-preprocessing';
+import { measureBubbleFill, DEFAULT_BIN_THRESHOLD } from './image-preprocessing';
+import { UNKNOWN_DIGIT } from './types.js';
 
 const DEFAULT_FILL_THRESHOLD = 0.35;
 
+// Minimum fill-confidence gap required to pick a winner between two candidate bubbles.
+// Below this, the two readings are noise-level indistinguishable (e.g. a double mark),
+// so the caller must treat the position as ambiguous rather than resolve a coin flip.
+const AMBIGUITY_MARGIN = 0.15;
+
 /**
  * Detect student ID from bubble grid (8 digits, each column has rows 0-9).
+ * Every column always contributes one character — UNKNOWN_DIGIT when the column's
+ * bubble could not be read — so the string length always equals the printed field
+ * width and a single miss can never shift the digits that follow it.
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
  * @param {number} [threshold]
+ * @param {number} [binThreshold]
  * @returns {string}
  */
-export function detectStudentId(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD) {
+export function detectStudentId(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD, binThreshold = DEFAULT_BIN_THRESHOLD) {
   const idBubbles = bubbles.filter((b) => b.section === 'studentId');
   if (idBubbles.length === 0) return 'UNKNOWN';
 
@@ -22,23 +32,24 @@ export function detectStudentId(bubbles, gray, threshold = DEFAULT_FILL_THRESHOL
 
   for (let col = 0; col < 8; col++) {
     const colBubbles = columns[col] || [];
-    const best = findBestFilled(colBubbles, gray, threshold);
-    if (best && best.row !== undefined) {
-      studentId += best.row.toString();
-    }
+    const best = findBestFilled(colBubbles, gray, threshold, binThreshold);
+    studentId += best?.row !== undefined ? best.row.toString() : UNKNOWN_DIGIT;
   }
 
-  return studentId || 'UNKNOWN';
+  return studentId;
 }
 
 /**
- * Detect exam code from bubble grid (4 digits).
+ * Detect exam code from bubble grid (4 digits). Same UNKNOWN_DIGIT-per-position
+ * rule as detectStudentId — a dropped digit here would otherwise silently select
+ * the wrong answer key for the whole sheet.
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
  * @param {number} [threshold]
+ * @param {number} [binThreshold]
  * @returns {string}
  */
-export function detectExamCode(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD) {
+export function detectExamCode(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD, binThreshold = DEFAULT_BIN_THRESHOLD) {
   const codeBubbles = bubbles.filter((b) => b.section === 'examCode');
   if (codeBubbles.length === 0) return '';
 
@@ -47,10 +58,8 @@ export function detectExamCode(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD
 
   for (let col = 0; col < 4; col++) {
     const colBubbles = columns[col] || [];
-    const best = findBestFilled(colBubbles, gray, threshold);
-    if (best && best.row !== undefined) {
-      code += best.row.toString();
-    }
+    const best = findBestFilled(colBubbles, gray, threshold, binThreshold);
+    code += best?.row !== undefined ? best.row.toString() : UNKNOWN_DIGIT;
   }
 
   return code;
@@ -63,9 +72,12 @@ export function detectExamCode(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD
  * @param {OpenCVMat} gray
  * @param {number} [questionCount=40]
  * @param {number} [threshold]
+ * @param {number} [binThreshold]
  * @returns {{ answers: string[], confidenceMap: Record<number, Record<string, number>> }}
  */
-export function detectPhanIAnswers(bubbles, gray, questionCount = 40, threshold = DEFAULT_FILL_THRESHOLD) {
+export function detectPhanIAnswers(
+  bubbles, gray, questionCount = 40, threshold = DEFAULT_FILL_THRESHOLD, binThreshold = DEFAULT_BIN_THRESHOLD
+) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section1');
   const questions = groupByQuestion(sectionBubbles);
   /** @type {string[]} */
@@ -78,10 +90,10 @@ export function detectPhanIAnswers(bubbles, gray, questionCount = 40, threshold 
     /** @type {Record<string, number>} */
     const fills = {};
     for (const b of qBubbles) {
-      if (b.option) fills[b.option] = measureBubbleFill(b, gray);
+      if (b.option) fills[b.option] = measureBubbleFill(b, gray, binThreshold);
     }
     confidenceMap[q] = fills;
-    const best = findBestFilled(qBubbles, gray, threshold);
+    const best = findBestFilled(qBubbles, gray, threshold, binThreshold);
     answers.push(best?.option || '');
   }
 
@@ -90,13 +102,19 @@ export function detectPhanIAnswers(bubbles, gray, questionCount = 40, threshold 
 
 /**
  * Detect Phần II answers: true/false for sub-options a,b,c,d per question.
+ * A sub-item is `null` when neither bubble clears the threshold (left blank) or when
+ * both do within a noise-level margin (an invalid double mark) — either way it must
+ * never compare equal to a key value, so scoring can never award credit for it.
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
  * @param {number} [questionCount=8]
  * @param {number} [threshold]
+ * @param {number} [binThreshold]
  * @returns {TrueFalseAnswer[]}
  */
-export function detectPhanIIAnswers(bubbles, gray, questionCount = 8, threshold = DEFAULT_FILL_THRESHOLD) {
+export function detectPhanIIAnswers(
+  bubbles, gray, questionCount = 8, threshold = DEFAULT_FILL_THRESHOLD, binThreshold = DEFAULT_BIN_THRESHOLD
+) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section2');
   /** @type {TrueFalseAnswer[]} */
   const answers = [];
@@ -104,19 +122,30 @@ export function detectPhanIIAnswers(bubbles, gray, questionCount = 8, threshold 
   for (let q = 1; q <= questionCount; q++) {
     const qBubbles = sectionBubbles.filter((b) => b.question === q);
     /** @type {TrueFalseAnswer} */
-    const answer = { a: false, b: false, c: false, d: false };
+    const answer = { a: null, b: null, c: null, d: null };
 
     for (const subOpt of ['a', 'b', 'c', 'd']) {
       const subBubbles = qBubbles.filter((b) => b.subOption === subOpt);
       const trueBubble = subBubbles.find((b) => b.value === true);
       const falseBubble = subBubbles.find((b) => b.value === false);
 
-      const trueConf = trueBubble ? measureBubbleFill(trueBubble, gray) : 0;
-      const falseConf = falseBubble ? measureBubbleFill(falseBubble, gray) : 0;
+      const trueConf = trueBubble ? measureBubbleFill(trueBubble, gray, binThreshold) : 0;
+      const falseConf = falseBubble ? measureBubbleFill(falseBubble, gray, binThreshold) : 0;
 
-      if (trueConf > threshold || falseConf > threshold) {
-        answer[subOpt] = trueConf > falseConf;
+      const trueMarked = trueConf > threshold;
+      const falseMarked = falseConf > threshold;
+
+      // null unless a single clear reading exists — either one bubble is above
+      // threshold, or both are but one is clearly darker than the other. A
+      // noise-level gap between two filled bubbles (a genuine double mark, invalid
+      // on THPT sheets) must not silently pick the marginally darker one.
+      let value = null;
+      if (trueMarked && falseMarked) {
+        if (Math.abs(trueConf - falseConf) >= AMBIGUITY_MARGIN) value = trueConf > falseConf;
+      } else if (trueMarked || falseMarked) {
+        value = trueMarked;
       }
+      answer[subOpt] = value;
     }
 
     answers.push(answer);
@@ -136,9 +165,12 @@ const PHAN_III_CHARS_PER_QUESTION = 5;
  * @param {OpenCVMat} gray
  * @param {number} [questionCount=6]
  * @param {number} [threshold]
+ * @param {number} [binThreshold]
  * @returns {string[]}
  */
-export function detectPhanIIIAnswers(bubbles, gray, questionCount = 6, threshold = DEFAULT_FILL_THRESHOLD) {
+export function detectPhanIIIAnswers(
+  bubbles, gray, questionCount = 6, threshold = DEFAULT_FILL_THRESHOLD, binThreshold = DEFAULT_BIN_THRESHOLD
+) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section3');
   const byQuestion = groupByQuestion(sectionBubbles);
   /** @type {string[]} */
@@ -151,13 +183,14 @@ export function detectPhanIIIAnswers(bubbles, gray, questionCount = 6, threshold
 
     for (let pos = 0; pos < PHAN_III_CHARS_PER_QUESTION; pos++) {
       const posBubbles = byCharPos[pos] || [];
-      const best = findBestFilled(posBubbles, gray, threshold);
-      if (best?.charValue !== undefined) {
-        answer += best.charValue;
-      }
+      const best = findBestFilled(posBubbles, gray, threshold, binThreshold);
+      // Every character position always contributes one character — UNKNOWN_DIGIT
+      // when unreadable — so a missed position can never shift the ones after it
+      // (e.g. "-1,5" collapsing into the wrong-shaped "-15").
+      answer += best?.charValue !== undefined ? best.charValue : UNKNOWN_DIGIT;
     }
 
-    answers.push(answer.trimEnd());
+    answers.push(answer);
   }
 
   return answers;
@@ -214,24 +247,35 @@ function groupByField(bubbles, fieldName) {
 }
 
 /**
- * Find the bubble with highest fill confidence above threshold.
+ * Find the bubble with highest fill confidence above threshold. Returns null (caller
+ * treats as "undetected") when the top two candidates are within AMBIGUITY_MARGIN of
+ * each other — e.g. a double mark — instead of silently resolving a noise-level tie.
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
  * @param {number} [threshold]
+ * @param {number} [binThreshold]
  * @returns {Bubble | null}
  */
-function findBestFilled(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD) {
+function findBestFilled(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD, binThreshold = DEFAULT_BIN_THRESHOLD) {
   /** @type {Bubble | null} */
   let best = null;
-  let bestConf = threshold;
+  let bestConf = -Infinity;
+  let secondConf = -Infinity;
 
   for (const bubble of bubbles) {
-    const conf = measureBubbleFill(bubble, gray);
+    const conf = measureBubbleFill(bubble, gray, binThreshold);
     if (conf > bestConf) {
+      secondConf = bestConf;
       bestConf = conf;
       best = bubble;
+    } else if (conf > secondConf) {
+      secondConf = conf;
     }
   }
 
+  if (!best || bestConf <= threshold) return null;
+  // Only compare against a real second candidate — with just one bubble in the group
+  // there is nothing to be ambiguous against.
+  if (secondConf > -Infinity && bestConf - secondConf < AMBIGUITY_MARGIN) return null;
   return best;
 }

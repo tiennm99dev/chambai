@@ -4,7 +4,7 @@
 /** @typedef {import('./types.js').Bubble} Bubble */
 /** @typedef {import('./types.js').ProcessingResult} ProcessingResult */
 /** @typedef {import('./types.js').TestConfig} TestConfig */
-import { measureBubbleFill } from './image-preprocessing';
+import { measureBubbleFill, DEFAULT_BIN_THRESHOLD } from './image-preprocessing';
 
 const COLORS = {
   allPositions: '#FF69B4',   // pink
@@ -17,38 +17,47 @@ const COLORS = {
 
 /**
  * Create a debug visualization canvas showing all detected bubbles and answers.
- * Returns a data URL of the annotated image.
- * @param {HTMLCanvasElement} originalCanvas
+ * Draws directly from `gray` — the same image the bubble grid coordinates were
+ * computed against (post-downscale, and post-perspective-correction when applied) —
+ * instead of an externally supplied canvas. Previously the overlay was drawn on the
+ * full-resolution, un-warped canvas while bubble coordinates were in downscaled or
+ * warped space, so every circle landed in the wrong place; this is the operator's
+ * only manual verification tool, so it must always be drawn in the same coordinate
+ * space the detection itself used.
+ * Returns a data URL of the annotated image (empty string when not on the main
+ * thread / no DOM available, e.g. inside a Web Worker).
  * @param {Bubble[]} bubbles
  * @param {ProcessingResult} result
  * @param {TestConfig} testConfig
- * @param {OpenCVMat} gray
+ * @param {OpenCVMat} gray - the image bubble coordinates are expressed against
+ * @param {number} [binThreshold] - page-level intensity threshold from computeGlobalThreshold
  * @returns {string}
  */
-export function createDebugVisualization(originalCanvas, bubbles, result, testConfig, gray) {
+export function createDebugVisualization(bubbles, result, testConfig, gray, binThreshold = DEFAULT_BIN_THRESHOLD) {
+  if (typeof document === 'undefined') return '';
+  // Guarded by the document check above, so this only ever runs on the main thread.
+  const cv = window.cv;
+
   const debugCanvas = document.createElement('canvas');
+  cv.imshow(debugCanvas, gray);
   const ctx = debugCanvas.getContext('2d');
   if (!ctx) return '';
-
-  debugCanvas.width = originalCanvas.width;
-  debugCanvas.height = originalCanvas.height;
-  ctx.drawImage(originalCanvas, 0, 0);
 
   // Mark all bubble positions (pink outlines)
   drawAllPositions(ctx, bubbles);
 
   // Mark student ID and exam code (blue/purple)
-  drawIdBubbles(ctx, bubbles, gray, 'studentId', COLORS.studentId);
-  drawIdBubbles(ctx, bubbles, gray, 'examCode', COLORS.examCode);
+  drawIdBubbles(ctx, bubbles, gray, 'studentId', COLORS.studentId, binThreshold);
+  drawIdBubbles(ctx, bubbles, gray, 'examCode', COLORS.examCode, binThreshold);
 
   // Mark Phần I answers
-  drawPhanIAnswers(ctx, bubbles, result, testConfig, gray);
+  drawPhanIAnswers(ctx, bubbles, result, testConfig, gray, binThreshold);
 
   // Mark Phần II answers
   drawPhanIIAnswers(ctx, bubbles, result, testConfig);
 
   // Mark Phần III answers
-  drawPhanIIIAnswers(ctx, bubbles, result, testConfig, gray);
+  drawPhanIIIAnswers(ctx, bubbles, result, testConfig);
 
   // Draw legend
   drawLegend(ctx);
@@ -81,12 +90,13 @@ function drawAllPositions(ctx, bubbles) {
  * @param {OpenCVMat} gray
  * @param {string} section
  * @param {string} color
+ * @param {number} [binThreshold]
  */
-function drawIdBubbles(ctx, bubbles, gray, section, color) {
+function drawIdBubbles(ctx, bubbles, gray, section, color, binThreshold = DEFAULT_BIN_THRESHOLD) {
   const sectionBubbles = bubbles.filter((b) => b.section === section);
 
   for (const bubble of sectionBubbles) {
-    const confidence = measureBubbleFill(bubble, gray);
+    const confidence = measureBubbleFill(bubble, gray, binThreshold);
     if (confidence <= 0.3) continue;
 
     const cx = bubble.x + bubble.width / 2;
@@ -107,8 +117,9 @@ function drawIdBubbles(ctx, bubbles, gray, section, color) {
  * @param {ProcessingResult} result
  * @param {TestConfig} config
  * @param {OpenCVMat} gray
+ * @param {number} [binThreshold]
  */
-function drawPhanIAnswers(ctx, bubbles, result, config, gray) {
+function drawPhanIAnswers(ctx, bubbles, result, config, gray, binThreshold = DEFAULT_BIN_THRESHOLD) {
   const section1 = bubbles.filter((b) => b.section === 'section1');
 
   for (const bubble of section1) {
@@ -119,7 +130,7 @@ function drawPhanIAnswers(ctx, bubbles, result, config, gray) {
     const correct = config.phanI.answers[q - 1];
 
     if (detected === bubble.option) {
-      const confidence = measureBubbleFill(bubble, gray);
+      const confidence = measureBubbleFill(bubble, gray, binThreshold);
       if (confidence <= 0.3) continue;
 
       const isCorrect = detected === correct;
@@ -174,9 +185,8 @@ function drawPhanIIAnswers(ctx, bubbles, result, config) {
  * @param {Bubble[]} bubbles
  * @param {ProcessingResult} result
  * @param {TestConfig} config
- * @param {OpenCVMat} gray
  */
-function drawPhanIIIAnswers(ctx, bubbles, result, config, gray) {
+function drawPhanIIIAnswers(ctx, bubbles, result, config) {
   const section3 = bubbles.filter((b) => b.section === 'section3');
 
   for (const bubble of section3) {
@@ -186,10 +196,10 @@ function drawPhanIIIAnswers(ctx, bubbles, result, config, gray) {
     const detected = result.phanIII[q - 1];
     const correct = config.phanIII.answers[q - 1];
 
-    if (bubble.digit?.toString() === detected) {
-      const confidence = measureBubbleFill(bubble, gray);
-      if (confidence <= 0.3) continue;
-
+    // Multi-char model: a bubble marks the detected answer at its own character
+    // position (charValue/charPosition), not the legacy single-digit `digit` field
+    // (never emitted by the generator) compared against the whole multi-char string.
+    if (bubble.charPosition !== undefined && detected?.[bubble.charPosition] === bubble.charValue) {
       const isCorrect = detected === correct;
       const cx = bubble.x + bubble.width / 2;
       const cy = bubble.y + bubble.height / 2;
