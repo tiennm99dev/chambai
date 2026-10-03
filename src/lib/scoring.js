@@ -13,8 +13,8 @@ import { UNKNOWN_DIGIT } from './types.js';
  * @typedef {TestConfig & { schemaVersion?: number }} ScoringInputConfig
  */
 
-/** @type {import('./types.js').ScoringConfig} */
-const DEFAULT_SCORING = {
+/** @type {Readonly<import('./types.js').ScoringConfig>} */
+export const DEFAULT_SCORING = {
   phanI: { pointsPerQuestion: 0.25 },
   phanII: { pointsPerQuestion: 0.25, partialCredit: true },
   phanIII: { pointsPerQuestion: 0.5 },
@@ -30,7 +30,7 @@ const SUB_OPTIONS = /** @type {const} */ (['a', 'b', 'c', 'd']);
 
 /**
  * Calculate score for a student result against the answer key.
- * @param {StudentResult} student
+ * @param {Pick<StudentResult, 'phanI'|'phanII'|'phanIII'|'error'>} student - only the answers (and the failure flag) are read
  * @param {ScoringInputConfig} config
  * @returns {ScoreResult}
  */

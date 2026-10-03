@@ -23,11 +23,24 @@ function isCvReady() {
 // never an unbounded one — an unreachable engine must surface as an error.
 const OPENCV_LOAD_TIMEOUT_MS = 60000;
 
+/** @typedef {import('@/lib/detection-pipeline').DetectionResult} DetectionResult */
+/**
+ * What ImageProcessor reports for each image: the pipeline result, or an error
+ * marker so a batch never waits on an image that cannot be processed.
+ * @typedef {DetectionResult | { error: true, errorMessage: string }} ProcessingOutcome
+ */
+
+/**
+ * @param {object} props
+ * @param {File | null} props.imageFile
+ * @param {import('@/lib/types').TestConfig} props.testConfig
+ * @param {(outcome: ProcessingOutcome) => void} props.onProcessingComplete
+ */
 export default function ImageProcessor({ imageFile, testConfig, onProcessingComplete }) {
   const [processing, setProcessing] = useState(false);
   const [cvLoaded, setCvLoaded] = useState(false);
   const [cvLoadError, setCvLoadError] = useState(false);
-  const [debugImageUrl, setDebugImageUrl] = useState(null);
+  const [debugImageUrl, setDebugImageUrl] = useState(/** @type {string | null} */ (null));
 
   // Always call the latest callback without adding it to effect deps below —
   // the parent recreates it on every render, and re-running the pipeline

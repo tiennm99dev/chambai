@@ -12,6 +12,22 @@ import {
 import { checkImageQuality } from './image-quality-check';
 import { createDebugVisualization } from './debug-visualization';
 import { UNKNOWN_DIGIT } from './types.js';
+import { getCv } from './opencv-runtime';
+/** @typedef {import('./types.js').TestConfig} TestConfig */
+/** @typedef {import('./types.js').ProcessingResult} ProcessingResult */
+/** @typedef {import('./image-quality-check.js').QualityReport} QualityReport */
+
+/**
+ * Pipeline output: the ProcessingResult fields plus the diagnostics the UI and the
+ * debug overlay read. `debugImageUrl` is null when no overlay was requested.
+ * @typedef {Omit<ProcessingResult, 'debugImageUrl'> & {
+ *   confidenceMap: Record<number, Record<string, number>>,
+ *   fillThreshold: number,
+ *   needsReview: boolean,
+ *   debugImageUrl: string|null,
+ *   qualityReport: QualityReport,
+ * }} DetectionResult
+ */
 
 /**
  * Run full OMR detection pipeline on image data.
@@ -20,11 +36,11 @@ import { UNKNOWN_DIGIT } from './types.js';
  * @param {HTMLCanvasElement|null} originalCanvas - truthy to request a debug overlay
  *   (built from the pipeline's own working image, not drawn onto this canvas — see
  *   createDebugVisualization); pass null (e.g. in a Worker) to skip it entirely.
- * @param {object} testConfig - answer key configuration
- * @returns {{ result: object, debugUrl: string|null }}
+ * @param {TestConfig} testConfig - answer key configuration
+ * @returns {{ result: DetectionResult, debugUrl: string|null }}
  */
 export function runDetectionPipeline(imageData, originalCanvas, testConfig) {
-  const cv = (typeof self !== 'undefined' && self.cv) || window.cv;
+  const cv = getCv();
 
   // Declared outside the try so the finally block can always release whatever was
   // allocated so far, even when something throws mid-pipeline (e.g. warpPerspective

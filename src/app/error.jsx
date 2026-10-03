@@ -5,6 +5,9 @@
  * this — e.g. a malformed result reaching a scoring calculation — previously
  * blank-screened the whole app with no way back to the other, still-valid
  * sessions saved in IndexedDB.
+ * @param {object} props
+ * @param {Error & { digest?: string }} props.error
+ * @param {() => void} props.reset
  */
 export default function Error({ error, reset }) {
   return (

@@ -208,7 +208,7 @@ function generatePhanIIBubbles(bubbles, area, abs, box) {
   const qRows = Math.ceil(questions / qPerRow);
   const colWidth = area.w / qPerRow;
   const rowHeight = area.h / qRows;
-  const subOptionLabels = ['a', 'b', 'c', 'd'];
+  const subOptionLabels = /** @type {const} */ (['a', 'b', 'c', 'd']);
   const tfSpacing = colWidth * 0.18;
   const subRowSpacing = rowHeight / (subOptions + 1);
 

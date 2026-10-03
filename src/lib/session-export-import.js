@@ -10,7 +10,7 @@ import { SCHEMA_VERSION } from './types.js';
  * @typedef {object} ImportPayload
  * @property {number} version
  * @property {number} [schemaVersion]
- * @property {{ name: string, config: { schemaVersion?: number, [key: string]: any }, [key: string]: any }} session
+ * @property {{ name: string, config: import('./types.js').SessionConfig, [key: string]: any }} session
  * @property {object[]} [results]
  */
 
@@ -93,7 +93,7 @@ export async function exportSession(sessionId) {
  * Import a session from a .chambai.json file.
  * Generates new IDs to avoid collisions.
  * @param {File} file
- * @returns {Promise<object>} - imported session
+ * @returns {Promise<import('./types.js').Session>} - imported session
  */
 export async function importSession(file) {
   /** @type {ImportPayload} */
@@ -116,6 +116,7 @@ export async function importSession(file) {
     ? data.session.config.schemaVersion
     : 1;
 
+  /** @type {import('./types.js').Session} */
   const session = {
     ...data.session,
     id: newSessionId,

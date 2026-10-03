@@ -38,9 +38,10 @@ function stampLegacyIfMissing(session) {
  *   already-scored session onto a newer scoring model.
  * - A brand-new session has no prior grades to protect, so it can safely
  *   start on the current model.
- * @param {SessionRecord} session
+ * @template {SessionRecord} T
+ * @param {T} session
  * @param {SessionRecord|null} existing
- * @returns {SessionRecord}
+ * @returns {T}
  */
 function withSchemaVersion(session, existing) {
   if (!session.config) return session;
@@ -78,8 +79,9 @@ export async function getSession(id) {
 }
 
 /**
- * @param {SessionRecord} session
- * @returns {Promise<SessionRecord>} the session actually persisted (with schemaVersion resolved)
+ * @template {SessionRecord} T
+ * @param {T} session
+ * @returns {Promise<T>} the session actually persisted (with schemaVersion resolved)
  */
 export async function saveSession(session) {
   const existing = session.id ? await getSession(session.id) : null;

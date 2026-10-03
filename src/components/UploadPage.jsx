@@ -6,33 +6,49 @@ import ImageProcessorErrorBoundary from './image-processor-error-boundary';
 import HighlightUnknown from './highlight-unknown';
 import { saveDebugImage } from '@/lib/indexed-db-store';
 
+/** @typedef {import('@/lib/types').SessionConfig} SessionConfig */
+/** @typedef {import('@/lib/types').SessionResult} SessionResult */
+/** @typedef {import('./ImageProcessor').ProcessingOutcome} ProcessingOutcome */
+/** @typedef {{ type: 'success'|'error'|'info', text: string }} StatusMessage */
+
 const PER_IMAGE_TIMEOUT_MS = 60000; // generous cap for one sheet on modest hardware
 
+/** @param {File} file */
 function fileKey(file) {
   return `${file.name}-${file.lastModified}-${file.size}`;
 }
 
+/** @param {File} file */
 function isImageFile(file) {
   if (file.type) return file.type.startsWith('image/');
   // Some file managers hand drag-and-drop files over with an empty MIME type.
   return /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
 }
 
+/**
+ * @param {object} props
+ * @param {SessionConfig} props.config
+ * @param {(results: SessionResult[]) => Promise<void> | void} props.onResultsAdd
+ * @param {(processing: boolean) => void} [props.onProcessingStateChange]
+ */
 export default function UploadPage({ config, onResultsAdd, onProcessingStateChange }) {
-  const [selectedImages, setSelectedImages] = useState([]);
-  const [processedResults, setProcessedResults] = useState([]);
-  const [failedItems, setFailedItems] = useState(new Map()); // fileKey -> error message
+  const [selectedImages, setSelectedImages] = useState(/** @type {File[]} */ ([]));
+  const [processedResults, setProcessedResults] = useState(/** @type {SessionResult[]} */ ([]));
+  const [failedItems, setFailedItems] = useState(/** @type {Map<string, string>} */ (new Map())); // fileKey -> error message
   const [processing, setProcessing] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [completedCount, setCompletedCount] = useState(0);
   const [batchTotal, setBatchTotal] = useState(0);
   const [dragActive, setDragActive] = useState(false);
-  const [statusMessage, setStatusMessage] = useState(null);
-  const [expandedDebug, setExpandedDebug] = useState(new Set());
+  const [statusMessage, setStatusMessage] = useState(/** @type {StatusMessage | null} */ (null));
+  const [expandedDebug, setExpandedDebug] = useState(/** @type {Set<string>} */ (new Set()));
+  /** @type {import('react').RefObject<HTMLInputElement | null>} */
   const fileInputRef = useRef(null);
+  /** @type {import('react').RefObject<(() => void) | null>} */
   const resolveRef = useRef(null);
+  /** @type {import('react').RefObject<File | null>} */
   const currentFileRef = useRef(null);
-  const succeededKeysRef = useRef(new Set());
+  const succeededKeysRef = useRef(/** @type {Set<string>} */ (new Set()));
 
   // Let the parent (page.jsx) lock navigation while a batch is running so an
   // in-flight batch can't be unmounted mid-way and silently lose every result
@@ -43,6 +59,7 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
 
   useEffect(() => {
     if (!processing) return undefined;
+    /** @param {BeforeUnloadEvent} e */
     const handleBeforeUnload = (e) => {
       e.preventDefault();
       e.returnValue = '';
@@ -51,12 +68,14 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [processing]);
 
+  /** @param {import('react').DragEvent<HTMLDivElement>} e */
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(e.type === 'dragenter' || e.type === 'dragover');
   };
 
+  /** @param {FileList} files */
   const addImageFiles = (files) => {
     const all = Array.from(files);
     const imageFiles = all.filter(isImageFile);
@@ -74,6 +93,7 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
     }
   };
 
+  /** @param {import('react').DragEvent<HTMLDivElement>} e */
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -81,11 +101,13 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
     addImageFiles(e.dataTransfer.files);
   };
 
+  /** @param {import('react').ChangeEvent<HTMLInputElement>} e */
   const handleFileSelect = (e) => {
     if (e.target.files) addImageFiles(e.target.files);
     e.target.value = '';
   };
 
+  /** @param {number} index */
   const removeImage = (index) => {
     setSelectedImages((prev) => {
       const removed = prev[index];
@@ -109,11 +131,11 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
     }
   };
 
-  const handleProcessingComplete = useCallback((result) => {
+  const handleProcessingComplete = useCallback((/** @type {ProcessingOutcome} */ result) => {
     const file = currentFileRef.current;
     const key = file ? fileKey(file) : null;
 
-    if (result?.error) {
+    if ('error' in result) {
       if (key) {
         setFailedItems((fm) => {
           const next = new Map(fm);
@@ -126,6 +148,7 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
       return;
     }
 
+    /** @type {SessionResult} */
     const newResult = {
       id: `student_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       fileName: file?.name || 'unknown',
@@ -138,7 +161,7 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
       qualityReport: result.qualityReport,
       needsReview: result.needsReview,
       processed: true,
-      debugImageUrl: result.debugImageUrl,
+      debugImageUrl: result.debugImageUrl ?? undefined,
     };
 
     if (key) {
@@ -186,6 +209,7 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
     settleCurrentSlot();
   }, []);
 
+  /** @returns {Promise<{ timedOut: boolean }>} */
   const waitForSlot = () => new Promise((resolve) => {
     let settled = false;
     const timer = setTimeout(() => {
@@ -256,6 +280,7 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
     }
   };
 
+  /** @param {string} id */
   const toggleDebugPreview = (id) => {
     setExpandedDebug((prev) => {
       const next = new Set(prev);
@@ -421,6 +446,14 @@ export default function UploadPage({ config, onResultsAdd, onProcessingStateChan
   );
 }
 
+/**
+ * @param {object} props
+ * @param {boolean} props.dragActive
+ * @param {(e: import('react').DragEvent<HTMLDivElement>) => void} props.onDrag
+ * @param {(e: import('react').DragEvent<HTMLDivElement>) => void} props.onDrop
+ * @param {(e: import('react').ChangeEvent<HTMLInputElement>) => void} props.onFileSelect
+ * @param {import('react').RefObject<HTMLInputElement | null>} props.fileInputRef
+ */
 function DropZone({ dragActive, onDrag, onDrop, onFileSelect, fileInputRef }) {
   return (
     <div className="mb-6">
@@ -444,6 +477,15 @@ function DropZone({ dragActive, onDrag, onDrop, onFileSelect, fileInputRef }) {
   );
 }
 
+/**
+ * @param {object} props
+ * @param {File} props.file
+ * @param {number} props.index
+ * @param {(index: number) => void} props.onRemove
+ * @param {boolean} props.disabled
+ * @param {boolean} props.isCurrent
+ * @param {string} [props.errorMessage]
+ */
 function ImageThumbnail({ file, index, onRemove, disabled, isCurrent, errorMessage }) {
   const [src, setSrc] = useState('');
 

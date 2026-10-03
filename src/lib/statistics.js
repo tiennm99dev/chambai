@@ -1,7 +1,7 @@
 // Calculate class-level summary statistics from scored student results
 
 /**
- * @param {Array<{score: {total: number, percentage: number}}>} results
+ * @param {Array<{ score?: { total: number, percentage: number } }>} results - an unscored entry counts as 0
  * @returns {{ mean: number, median: number, min: number, max: number, count: number, distribution: Record<string, number> } | null}
  */
 export function calculateClassStatistics(results) {

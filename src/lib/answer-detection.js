@@ -124,7 +124,7 @@ export function detectPhanIIAnswers(
     /** @type {TrueFalseAnswer} */
     const answer = { a: null, b: null, c: null, d: null };
 
-    for (const subOpt of ['a', 'b', 'c', 'd']) {
+    for (const subOpt of /** @type {const} */ (['a', 'b', 'c', 'd'])) {
       const subBubbles = qBubbles.filter((b) => b.subOption === subOpt);
       const trueBubble = subBubbles.find((b) => b.value === true);
       const falseBubble = subBubbles.find((b) => b.value === false);
@@ -231,7 +231,7 @@ function groupByQuestion(bubbles) {
 /**
  * Group bubbles by an arbitrary numeric field value.
  * @param {Bubble[]} bubbles
- * @param {string} fieldName
+ * @param {'column'|'row'|'question'|'digit'|'charPosition'} fieldName - a numeric Bubble field
  * @returns {Record<number, Bubble[]>}
  */
 function groupByField(bubbles, fieldName) {

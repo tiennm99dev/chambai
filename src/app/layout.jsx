@@ -1,3 +1,4 @@
+/// <reference types="next" />
 import { Geist, Geist_Mono } from "next/font/google";
 import OpenCvLoader from "@/components/opencv-loader";
 import "./globals.css";
@@ -17,6 +18,7 @@ export const metadata = {
   description: "Automated scoring system for Vietnamese multiple choice tests",
 };
 
+/** @param {{ children: import('react').ReactNode }} props */
 export default function RootLayout({ children }) {
   return (
     <html lang="vi">

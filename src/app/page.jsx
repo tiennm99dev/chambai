@@ -12,6 +12,12 @@ import { getAllSessions, saveSession, deleteSession } from '@/lib/indexed-db-ses
 import { getSessionResults, replaceSessionResults, deleteSessionResults } from '@/lib/indexed-db-results';
 import { migrateFromLocalStorage } from '@/lib/local-storage-migration';
 
+/** @typedef {import('@/lib/types').Session} Session */
+/** @typedef {import('@/lib/types').SessionConfig} SessionConfig */
+/** @typedef {import('@/lib/types').SessionResult} SessionResult */
+/** @typedef {import('@/components/Navigation').PageKey} PageKey */
+
+/** @type {SessionConfig} */
 const DEFAULT_CONFIG = {
   phanI: { questionCount: 40, answers: [] },
   phanII: { questionCount: 8, answers: [] },
@@ -26,41 +32,53 @@ const DEFAULT_CONFIG = {
 // DEFAULT_CONFIG's nested objects must never be handed out by reference — a
 // shared reference here previously let an in-memory "unsaved" edit on one
 // session mutate the default object used to seed every other new session.
+/** @returns {SessionConfig} */
 function cloneDefaultConfig() {
   return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 }
 
 export default function Home() {
-  const [sessions, setSessions] = useState([]);
-  const [activeSession, setActiveSession] = useState(null);
-  const [currentPage, setCurrentPage] = useState('config');
+  const [sessions, setSessions] = useState(/** @type {Session[]} */ ([]));
+  const [activeSession, setActiveSession] = useState(/** @type {Session | null} */ (null));
+  const [currentPage, setCurrentPage] = useState(/** @type {PageKey} */ ('config'));
   const [config, setConfig] = useState(DEFAULT_CONFIG);
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState(/** @type {SessionResult[]} */ ([]));
   const [configSaved, setConfigSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [batchProcessing, setBatchProcessing] = useState(false);
-  const [storageError, setStorageError] = useState(null);
+  const [storageError, setStorageError] = useState(/** @type {string | null} */ (null));
 
   // Wraps every IndexedDB write/read used by page-level handlers: on failure
   // the app must never look like it saved when it didn't, so surface a
   // blocking Vietnamese message instead of losing the write silently.
-  const runPersist = useCallback(async (fn, failureMessage) => {
-    try {
-      const value = await fn();
-      return { ok: true, value };
-    } catch (err) {
-      console.error('IndexedDB operation failed:', err);
-      setStorageError(failureMessage);
-      return { ok: false, value: undefined };
-    }
-  }, []);
+  const runPersist = useCallback(
+    /**
+     * @template T
+     * @param {() => Promise<T>} fn
+     * @param {string} failureMessage
+     * @returns {Promise<{ ok: true, value: T } | { ok: false, value: undefined }>}
+     */
+    async (fn, failureMessage) => {
+      try {
+        const value = await fn();
+        return { ok: true, value };
+      } catch (err) {
+        console.error('IndexedDB operation failed:', err);
+        setStorageError(failureMessage);
+        return { ok: false, value: undefined };
+      }
+    },
+    []
+  );
 
   // Boot: migrate localStorage, then load sessions
   useEffect(() => {
     (async () => {
       try {
         await migrateFromLocalStorage();
-        const allSessions = await getAllSessions();
+        // The store only ever holds sessions written by this app (created here
+        // or validated on import), so its records are Sessions.
+        const allSessions = /** @type {Session[]} */ (await getAllSessions());
         setSessions(allSessions);
       } catch (err) {
         console.error('Failed to load sessions:', err);
@@ -72,13 +90,13 @@ export default function Home() {
   }, []);
 
   // Load session data when active session changes
-  const loadSession = useCallback(async (session) => {
+  const loadSession = useCallback(async (/** @type {Session} */ session) => {
     setActiveSession(session);
     setConfig(session.config || cloneDefaultConfig());
     setConfigSaved(true);
     setCurrentPage('config');
     try {
-      const sessionResults = await getSessionResults(session.id);
+      const sessionResults = /** @type {SessionResult[]} */ (await getSessionResults(session.id));
       setResults(sessionResults);
     } catch (err) {
       console.error('Failed to load session results:', err);
@@ -87,7 +105,9 @@ export default function Home() {
     }
   }, []);
 
+  /** @param {string} name */
   const handleCreateSession = async (name) => {
+    /** @type {Session} */
     const session = {
       id: `session_${Date.now()}`,
       name,
@@ -105,6 +125,7 @@ export default function Home() {
     loadSession(saved);
   };
 
+  /** @param {string} id */
   const handleDeleteSession = async (id) => {
     const { ok } = await runPersist(async () => {
       await deleteSession(id);
@@ -123,12 +144,13 @@ export default function Home() {
     setResults([]);
     setConfigSaved(false);
     const { ok, value } = await runPersist(
-      () => getAllSessions(),
+      async () => /** @type {Session[]} */ (await getAllSessions()),
       'Không tải được danh sách phiên. Vui lòng tải lại trang.'
     );
     if (ok) setSessions(value);
   };
 
+  /** @param {SessionConfig} newConfig */
   const handleConfigChange = (newConfig) => {
     setConfig(newConfig);
     // Any edit invalidates the last save — Navigation must stop showing step 1
@@ -137,6 +159,7 @@ export default function Home() {
     setConfigSaved(false);
   };
 
+  /** @param {SessionConfig} newConfig */
   const handleConfigSave = async (newConfig) => {
     setConfig(newConfig);
     if (!activeSession) {
@@ -157,7 +180,7 @@ export default function Home() {
   // rewrites a session's results in one IndexedDB transaction — a separate
   // delete-then-save pair is not atomic and can lose or resurrect rows if a
   // batch is interrupted between the two calls.
-  const persistResults = useCallback(async (list) => {
+  const persistResults = useCallback(async (/** @type {SessionResult[]} */ list) => {
     if (!activeSession) return;
     const toSave = list.map(({ debugImageUrl, ...rest }) => rest);
     await runPersist(
@@ -166,8 +189,10 @@ export default function Home() {
     );
   }, [activeSession, runPersist]);
 
+  /** @param {SessionResult[]} newResults */
   const handleResultsAdd = async (newResults) => {
     const withSession = newResults.map((r) => ({ ...r, sessionId: activeSession?.id }));
+    /** @type {SessionResult[]} */
     let merged = withSession;
     setResults((prev) => {
       merged = [...prev, ...withSession];
@@ -176,6 +201,7 @@ export default function Home() {
     await persistResults(merged);
   };
 
+  /** @param {SessionResult[]} updatedResults */
   const handleResultsUpdate = async (updatedResults) => {
     setResults(updatedResults);
     await persistResults(updatedResults);

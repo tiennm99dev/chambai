@@ -3,12 +3,18 @@
 import { useMemo, useState } from 'react';
 import { analyzeItems } from '@/lib/item-analysis';
 
+/** @typedef {'question'|'correctPct'|'wrongPct'|'difficulty'} SortKey */
+/** @typedef {import('react').AriaAttributes['aria-sort']} AriaSort */
+
 /**
  * Per-question analysis table with difficulty color coding and sortable columns.
+ * @param {object} props
+ * @param {import('@/lib/types').StudentResult[]} props.results - scored results only
+ * @param {import('@/lib/types').TestConfig} props.config
  */
 export default function ItemAnalysisView({ results, config }) {
-  const [sortKey, setSortKey] = useState('question');
-  const [sortDir, setSortDir] = useState('asc');
+  const [sortKey, setSortKey] = useState(/** @type {SortKey} */ ('question'));
+  const [sortDir, setSortDir] = useState(/** @type {'asc'|'desc'} */ ('asc'));
   const [filterSection, setFilterSection] = useState('all');
 
   const items = useMemo(() => analyzeItems(results, config), [results, config]);
@@ -27,12 +33,15 @@ export default function ItemAnalysisView({ results, config }) {
     });
   }, [items, filterSection, sortKey, sortDir]);
 
+  /** @param {SortKey} key */
   const handleSort = (key) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(key); setSortDir('asc'); }
   };
 
+  /** @param {SortKey} key */
   const arrow = (key) => (sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '');
+  /** @param {SortKey} key @returns {AriaSort} */
   const ariaSort = (key) => (sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none');
 
   if (items.length === 0) {
@@ -103,7 +112,7 @@ export default function ItemAnalysisView({ results, config }) {
  * @param {object} props
  * @param {import('react').ReactNode} props.children
  * @param {() => void} [props.onClick] - omitted for non-sortable columns
- * @param {string} [props.ariaSort]
+ * @param {AriaSort} [props.ariaSort]
  */
 function Th({ children, onClick, ariaSort }) {
   if (!onClick) {
@@ -118,7 +127,9 @@ function Th({ children, onClick, ariaSort }) {
   );
 }
 
+/** @param {{ difficulty: string }} props */
 function DifficultyBadge({ difficulty }) {
+  /** @type {Record<string, string>} */
   const colors = {
     'Dễ': 'bg-green-100 text-green-800',
     'TB': 'bg-yellow-100 text-yellow-800',

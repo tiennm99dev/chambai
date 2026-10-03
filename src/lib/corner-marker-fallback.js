@@ -1,5 +1,6 @@
 // Fallback corner marker detection for answer sheets with solid black square markers
 // Used when contour-based sheet detection fails to find the rectangular border
+import { getCv } from './opencv-runtime';
 /** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
 /** @typedef {import('./types.js').Point} Point */
 /** @typedef {import('./types.js').MarkerDetectionResult} MarkerDetectionResult */
@@ -16,7 +17,7 @@
  * @returns {MarkerDetectionResult}
  */
 export function detectCornerMarkers(thresh, imageWidth, imageHeight) {
-  const cv = (typeof self !== 'undefined' && self.cv) || window.cv;
+  const cv = getCv();
 
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();

@@ -30,13 +30,17 @@ export default function PhanIAnswerGrid({
   correctAnswers,
   confidenceMap,
 }) {
+  /** @type {import('react').RefObject<(HTMLDivElement | null)[]>} */
   const questionRefs = useRef([]);
 
-  const setAnswer = useCallback((index, option) => {
+  const setAnswer = useCallback((/** @type {number} */ index, /** @type {string} */ option) => {
     onAnswerChange(index, answers[index] === option ? '' : option);
   }, [answers, onAnswerChange]);
 
-  const handleKeyDown = useCallback((index, e) => {
+  const handleKeyDown = useCallback((
+    /** @type {number} */ index,
+    /** @type {import('react').KeyboardEvent<HTMLDivElement>} */ e,
+  ) => {
     const key = e.key.toUpperCase();
 
     if (['A', 'B', 'C', 'D'].includes(key)) {

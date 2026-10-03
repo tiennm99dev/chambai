@@ -1,4 +1,5 @@
 // Image quality validation: blur, resolution, marker checks before processing
+import { getCv } from './opencv-runtime';
 /** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
 /** @typedef {import('./types.js').MarkerDetectionResult} MarkerDetectionResult */
 
@@ -25,7 +26,7 @@
  * @returns {QualityReport}
  */
 export function checkImageQuality(gray, markers, imageWidth, imageHeight) {
-  const cv = window.cv;
+  const cv = getCv();
   /** @type {QualityIssue[]} */
   const issues = [];
 

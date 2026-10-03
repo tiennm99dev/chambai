@@ -5,6 +5,8 @@ import { useMemo, useState } from 'react';
 /**
  * Score distribution histogram with configurable bucket count.
  * Shows mean/median lines and percentile ranks on hover.
+ * @param {object} props
+ * @param {import('@/lib/types').StudentResult[]} props.results
  */
 export default function ScoreDistributionChart({ results }) {
   const [bucketCount, setBucketCount] = useState(10);
@@ -16,6 +18,7 @@ export default function ScoreDistributionChart({ results }) {
     const max = Math.max(...scores);
     const bucketSize = max > 0 ? max / bucketCount : 1;
     const b = Array(bucketCount).fill(0);
+    /** @type {string[]} */
     const l = [];
 
     for (const s of scores) {

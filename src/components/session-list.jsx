@@ -3,12 +3,25 @@
 import { useState, useRef } from 'react';
 import { exportSession, importSession } from '@/lib/session-export-import';
 
+/** @typedef {import('@/lib/types').Session} Session */
+
+/** @param {unknown} err @returns {string} */
+function errorMessage(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Session list landing page — shows all exam sessions with create/delete/export/import.
+ * @param {object} props
+ * @param {Session[]} props.sessions
+ * @param {(session: Session) => void} props.onSelect
+ * @param {(name: string) => void} props.onCreate
+ * @param {(id: string) => void} props.onDelete
  */
 export default function SessionList({ sessions, onSelect, onCreate, onDelete }) {
   const [newName, setNewName] = useState('');
-  const [statusMsg, setStatusMsg] = useState(null);
+  const [statusMsg, setStatusMsg] = useState(/** @type {{ type: 'success'|'error', text: string } | null} */ (null));
+  /** @type {import('react').RefObject<HTMLInputElement | null>} */
   const importRef = useRef(null);
 
   const handleCreate = () => {
@@ -17,15 +30,17 @@ export default function SessionList({ sessions, onSelect, onCreate, onDelete }) 
     setNewName('');
   };
 
+  /** @param {string} id @param {import('react').MouseEvent} e */
   const handleExport = async (id, e) => {
     e.stopPropagation();
     try {
       await exportSession(id);
     } catch (err) {
-      setStatusMsg({ type: 'error', text: `Lỗi xuất: ${err.message}` });
+      setStatusMsg({ type: 'error', text: `Lỗi xuất: ${errorMessage(err)}` });
     }
   };
 
+  /** @param {import('react').ChangeEvent<HTMLInputElement>} e */
   const handleImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -34,7 +49,7 @@ export default function SessionList({ sessions, onSelect, onCreate, onDelete }) 
       onSelect(session);
       setStatusMsg({ type: 'success', text: `Đã nhập phiên "${session.name}"` });
     } catch (err) {
-      setStatusMsg({ type: 'error', text: `Lỗi nhập: ${err.message}` });
+      setStatusMsg({ type: 'error', text: `Lỗi nhập: ${errorMessage(err)}` });
     }
     e.target.value = '';
   };
@@ -93,7 +108,10 @@ export default function SessionList({ sessions, onSelect, onCreate, onDelete }) 
               >
                 <h3 className="font-semibold text-gray-900">{session.name}</h3>
                 <p className="text-sm text-gray-500">
-                  {session.date} &middot; Tạo lúc {new Date(session.createdAt).toLocaleString('vi-VN')}
+                  {session.date}
+                  {session.createdAt !== undefined && (
+                    <> &middot; Tạo lúc {new Date(session.createdAt).toLocaleString('vi-VN')}</>
+                  )}
                 </p>
               </button>
               <div className="flex gap-2 ml-3">

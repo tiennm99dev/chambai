@@ -8,9 +8,16 @@ const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:
  * Shared dialog shell for overlay modals: role="dialog" + aria-modal, a focus
  * trap, Escape-to-close, background scroll lock, and focus restore on close.
  * Wrap modal content with this instead of a bare fixed-overlay div.
+ * @param {object} props
+ * @param {string} props.labelledBy - id of the element that titles the dialog
+ * @param {() => void} props.onClose
+ * @param {import('react').ReactNode} props.children
+ * @param {string} [props.className]
  */
 export default function ModalShell({ labelledBy, onClose, children, className = '' }) {
+  /** @type {import('react').RefObject<HTMLDivElement | null>} */
   const containerRef = useRef(null);
+  /** @type {import('react').RefObject<Element | null>} */
   const previouslyFocusedRef = useRef(null);
 
   useEffect(() => {
@@ -18,17 +25,20 @@ export default function ModalShell({ labelledBy, onClose, children, className = 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
+    /** @returns {HTMLElement[]} */
     const getFocusable = () => {
       const node = containerRef.current;
       if (!node) return [];
       return Array.from(node.querySelectorAll(FOCUSABLE_SELECTOR)).filter(
-        (el) => !el.disabled && el.tabIndex !== -1
+        /** @returns {el is HTMLElement} */
+        (el) => el instanceof HTMLElement && !('disabled' in el && el.disabled) && el.tabIndex !== -1
       );
     };
 
     const first = getFocusable()[0];
     (first || containerRef.current)?.focus();
 
+    /** @param {KeyboardEvent} e */
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation();

@@ -11,6 +11,13 @@ import HighlightUnknown from './highlight-unknown';
 /** Characters Excel/Sheets would otherwise interpret as a formula prefix. */
 const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 
+/** @typedef {import('@/lib/types').SessionConfig} SessionConfig */
+/** @typedef {import('@/lib/types').SessionResult} SessionResult */
+/** @typedef {'studentId'|'total'|'percentage'} SortKey */
+/** @typedef {'results'|'analysis'|'distribution'} TabKey */
+/** @typedef {import('react').AriaAttributes['aria-sort']} AriaSort */
+
+/** @param {string | number | null | undefined} value */
 function escapeCsvField(value) {
   const str = String(value ?? '');
   const guarded = CSV_FORMULA_PREFIX.test(str) ? `'${str}` : str;
@@ -19,12 +26,19 @@ function escapeCsvField(value) {
   return /[",\n\r]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
 }
 
+/**
+ * @param {object} props
+ * @param {SessionResult[]} props.results
+ * @param {SessionConfig} props.config
+ * @param {(results: SessionResult[]) => void} props.onResultsUpdate
+ * @param {() => void} props.onResultsClear
+ */
 export default function ResultsPage({ results: rawResults, config, onResultsUpdate, onResultsClear }) {
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [sortKey, setSortKey] = useState('studentId');
-  const [sortDir, setSortDir] = useState('asc');
+  const [selectedStudent, setSelectedStudent] = useState(/** @type {string | null} */ (null));
+  const [sortKey, setSortKey] = useState(/** @type {SortKey} */ ('studentId'));
+  const [sortDir, setSortDir] = useState(/** @type {'asc'|'desc'} */ ('asc'));
   const [filterText, setFilterText] = useState('');
-  const [activeTab, setActiveTab] = useState('results');
+  const [activeTab, setActiveTab] = useState(/** @type {TabKey} */ ('results'));
 
   // Score all results against current config. A result whose image processing
   // failed (`error` set) carries no reliable answer arrays — it must never
@@ -38,6 +52,7 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
   const legacyPhanII = scoredResults.some((r) => r.score?.legacyPhanII);
   const needsReviewCount = results.filter((r) => r.needsReview).length;
 
+  /** @param {SortKey} key */
   const handleSort = (key) => {
     if (sortKey === key) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -91,7 +106,9 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
   };
 
   const selectedData = results.find((r) => r.id === selectedStudent);
+  /** @param {SortKey} key */
   const sortArrow = (key) => sortKey === key ? (sortDir === 'asc' ? '↑' : '↓') : '';
+  /** @param {SortKey} key @returns {AriaSort} */
   const ariaSort = (key) => sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
 
   return (
@@ -137,11 +154,11 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
 
           {/* Tabs */}
           <div className="flex gap-1 mb-4 border-b border-gray-200 no-print">
-            {[
+            {/** @type {{ key: TabKey, label: string }[]} */ ([
               { key: 'results', label: 'Bảng điểm' },
               { key: 'analysis', label: 'Phân tích câu hỏi' },
               { key: 'distribution', label: 'Phân phối điểm' },
-            ].map((tab) => (
+            ]).map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -252,6 +269,10 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
 
 // --- Statistics ---
 
+/**
+ * @param {object} props
+ * @param {NonNullable<ReturnType<typeof calculateClassStatistics>>} props.stats
+ */
 function StatisticsSummary({ stats }) {
   const maxBucket = Math.max(...Object.values(stats.distribution), 1);
   return (
@@ -277,6 +298,7 @@ function StatisticsSummary({ stats }) {
   );
 }
 
+/** @param {{ label: string, value: number }} props */
 function StatCard({ label, value }) {
   return (
     <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
@@ -288,9 +310,16 @@ function StatCard({ label, value }) {
 
 // --- Table helpers ---
 
+/** @param {{ children: import('react').ReactNode }} props */
 function Th({ children }) {
   return <th className="px-3 py-2 text-left text-sm font-medium text-gray-700">{children}</th>;
 }
+/**
+ * @param {object} props
+ * @param {import('react').ReactNode} props.children
+ * @param {() => void} props.onClick
+ * @param {AriaSort} props.ariaSort
+ */
 function ThBtn({ children, onClick, ariaSort }) {
   return (
     <th className="px-3 py-2 text-left text-sm font-medium text-gray-700" aria-sort={ariaSort}>
@@ -309,6 +338,7 @@ function ThBtn({ children, onClick, ariaSort }) {
 function Td({ children, className = '', colSpan }) {
   return <td colSpan={colSpan} className={`px-3 py-2 text-sm text-gray-900 ${className}`}>{children}</td>;
 }
+/** @param {{ percentage: number }} props */
 function ScoreBadge({ percentage }) {
   const color = percentage >= 80 ? 'bg-green-100 text-green-800' :
     percentage >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';

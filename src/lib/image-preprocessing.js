@@ -1,4 +1,5 @@
 // Image preprocessing: grayscale conversion, thresholding, noise reduction, resize
+import { getCv } from './opencv-runtime';
 /** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
 /** @typedef {import('./types.js').Bubble} Bubble */
 
@@ -23,6 +24,7 @@ export function resizeForProcessing(canvas) {
   resized.width = MAX_PROCESSING_WIDTH;
   resized.height = Math.round(canvas.height * scale);
   const ctx = resized.getContext('2d');
+  if (!ctx) throw new Error('2D canvas context is unavailable');
   ctx.drawImage(canvas, 0, 0, resized.width, resized.height);
   return resized;
 }
@@ -34,7 +36,7 @@ export function resizeForProcessing(canvas) {
  * @returns {{ gray: OpenCVMat, thresh: OpenCVMat }}
  */
 export function preprocessForBubbleDetection(src) {
-  const cv = window.cv;
+  const cv = getCv();
 
   // gray/closed are returned to the caller on success; blurred/thresh/kernel are
   // always-intermediate Mats. Track all five so any throw mid-pipeline (cvtColor,
@@ -94,7 +96,7 @@ export function preprocessForBubbleDetection(src) {
  * @returns {number} intensity threshold (0-255) separating ink from paper
  */
 export function computeGlobalThreshold(gray) {
-  const cv = (typeof self !== 'undefined' && self.cv) || window.cv;
+  const cv = getCv();
   const dummy = new cv.Mat();
   try {
     return cv.threshold(gray, dummy, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
@@ -147,7 +149,7 @@ export function computeAdaptiveThreshold(bubbles, gray, binThreshold = DEFAULT_B
  * @returns {number}
  */
 export function measureBubbleFill(bubble, gray, binThreshold = DEFAULT_BIN_THRESHOLD) {
-  const cv = (typeof self !== 'undefined' && self.cv) || window.cv;
+  const cv = getCv();
 
   let roi = null;
   let binary = null;
@@ -165,7 +167,11 @@ export function measureBubbleFill(bubble, gray, binThreshold = DEFAULT_BIN_THRES
     // Absolute-contrast gate: a ROI containing only blank paper has near-zero
     // dynamic range. Without this, a fixed threshold near the paper's own noise
     // floor can still register a few "dark" pixels from scan/JPEG noise.
-    const { minVal, maxVal } = cv.minMaxLoc(roi);
+    // The generated typings mirror the C++ out-parameter signature; the JS binding
+    // is minMaxLoc(src[, mask]) and returns the extrema instead.
+    const { minVal, maxVal } = /** @type {(src: OpenCVMat) => import('@techstark/opencv-js').MinMaxLoc} */ (
+      cv.minMaxLoc
+    )(roi);
     if (maxVal - minVal < 40) return 0;
 
     binary = new cv.Mat();

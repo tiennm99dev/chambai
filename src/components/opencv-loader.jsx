@@ -4,7 +4,9 @@ import Script from 'next/script';
 
 // jsDelivr mirror of opencv.js — docs.opencv.org returns a Cloudflare 403 and
 // is unusable from the browser. Pinned build + SRI hash, verified UMD (sets
-// window.cv) with the same onRuntimeInitialized contract as upstream.
+// window.cv) with the same onRuntimeInitialized contract as upstream. The
+// @techstark/opencv-js devDependency supplies the JSDoc types for this build,
+// so bump both versions together.
 const OPENCV_SRC = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js';
 const OPENCV_INTEGRITY = 'sha384-XsTfGA62I8LzqS3D7IcgiSOCrJuECWLcg4s1M0AnrkDCcJ8lXX+j+qdg+o6t7KZa';
 

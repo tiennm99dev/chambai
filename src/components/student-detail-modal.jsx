@@ -6,14 +6,24 @@ import ModalShell from './modal-shell';
 import HighlightUnknown from './highlight-unknown';
 import ManualCorrectionModal from './manual-correction-modal';
 
+/** @typedef {import('@/lib/types').SessionResult} SessionResult */
+
+/**
+ * @param {object} props
+ * @param {SessionResult} props.student
+ * @param {import('@/lib/types').SessionConfig} props.testConfig
+ * @param {() => void} props.onClose
+ * @param {(corrected: SessionResult) => void} [props.onResultUpdate]
+ */
 export default function StudentDetailModal({ student, testConfig, onClose, onResultUpdate }) {
-  const [debugImageUrl, setDebugImageUrl] = useState(null);
+  const [debugImageUrl, setDebugImageUrl] = useState(/** @type {string | null} */ (null));
   const [showCorrection, setShowCorrection] = useState(false);
 
   useEffect(() => {
     getDebugImage(student.id).then((url) => setDebugImageUrl(url)).catch(() => {});
   }, [student.id]);
 
+  /** @param {SessionResult} correctedStudent */
   const handleCorrectionSave = (correctedStudent) => {
     setShowCorrection(false);
     if (onResultUpdate) onResultUpdate(correctedStudent);
@@ -105,7 +115,7 @@ export default function StudentDetailModal({ student, testConfig, onClose, onRes
                 return (
                   <div key={i} className="border rounded p-2 text-sm">
                     <span className="font-medium text-gray-900">Câu {i + 1}: </span>
-                    {['a', 'b', 'c', 'd'].map((opt) => {
+                    {/** @type {const} */ (['a', 'b', 'c', 'd']).map((opt) => {
                       const keyVal = testConfig?.phanII.answers[i]?.[opt];
                       const val = answer[opt] ?? null;
                       const label = val === null ? '-' : val ? 'Đ' : 'S';
@@ -157,6 +167,7 @@ export default function StudentDetailModal({ student, testConfig, onClose, onRes
   );
 }
 
+/** @param {{ label: string, score: number }} props */
 function ScoreCard({ label, score }) {
   return (
     <div className="bg-gray-50 rounded-lg p-3 text-center">

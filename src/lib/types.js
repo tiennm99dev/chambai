@@ -24,6 +24,8 @@
  * @property {BoundingBox} boundingBox - Bounding box of the answer area
  */
 
+/** @typedef {'a'|'b'|'c'|'d'} SubOption */
+
 /**
  * @typedef {object} Bubble
  * @property {number} x
@@ -37,7 +39,7 @@
  * @property {number} [row] - Row index / digit value (for studentId/examCode grids)
  * @property {number} [question] - Question number (for answer sections)
  * @property {string} [option] - 'A' | 'B' | 'C' | 'D' (for section1)
- * @property {string} [subOption] - 'a' | 'b' | 'c' | 'd' (for section2)
+ * @property {SubOption} [subOption] - true/false sub-item label (for section2)
  * @property {boolean} [value] - true/false bubble (for section2)
  * @property {number} [digit] - Digit value 0–9 (for section3, legacy single-digit model)
  * @property {number} [charPosition] - Character position index 0–4 (for section3 multi-char)
@@ -77,6 +79,8 @@
  * @property {number} total
  * @property {number} maxTotal
  * @property {number} percentage
+ * @property {boolean} [legacyPhanII] - Phần II scored with the pre-CV1239 linear model (older sessions)
+ * @property {boolean} [unscored] - the result failed processing and earned no marks
  */
 
 /**
@@ -106,8 +110,34 @@
  * @property {string} [debugImageUrl]
  * @property {ScoreResult} [score]
  * @property {boolean} [needsReview]
+ * @property {boolean} [corrected] - answers were edited by hand in the correction modal
+ * @property {Record<number, Record<string, number>>} [confidenceMap] - Phần I fill ratio per question and option
+ * @property {import('./image-quality-check.js').QualityReport} [qualityReport]
  * @property {string} [error] - Set when processing failed; such a result is never scored.
  */
+
+/** @typedef {'phanI'|'phanII'|'phanIII'} SectionKey */
+
+/**
+ * Answer key and scoring as edited in the UI and stored on a session. The
+ * persistence layer stamps `schemaVersion` (see indexed-db-sessions.js).
+ * @typedef {TestConfig & { schemaVersion?: number }} SessionConfig
+ */
+
+/**
+ * An exam session as kept in IndexedDB. `date` and `createdAt` are always set
+ * for sessions created in the app but may be absent on an imported file.
+ * @typedef {object} Session
+ * @property {string} id
+ * @property {string} name
+ * @property {string} [date] - ISO date (YYYY-MM-DD) shown in the session list
+ * @property {SessionConfig} config
+ * @property {number} [createdAt] - epoch ms
+ * @property {number} updatedAt - epoch ms
+ * @property {number} [importedAt] - epoch ms, set when the session came from an imported file
+ */
+
+/** @typedef {StudentResult & { sessionId?: string }} SessionResult */
 
 /**
  * Placeholder character written into a digit string when a position could not be read.
@@ -118,11 +148,8 @@ export const UNKNOWN_DIGIT = '?';
 /** Schema version for exported/persisted sessions. Bump when stored shapes change. */
 export const SCHEMA_VERSION = 3;
 
-// OpenCV.js Mat type — opaque handle, no structural definition needed
-/**
- * @typedef {object} OpenCVMat
- * @property {number} rows
- * @property {number} cols
- * @property {function} delete
- * @property {function} roi
- */
+// OpenCV.js types come from @techstark/opencv-js (a devDependency used for types
+// only). Its version must match the runtime build loaded from the CDN in
+// src/components/opencv-loader.jsx.
+/** @typedef {typeof import('@techstark/opencv-js')} OpenCV */
+/** @typedef {import('@techstark/opencv-js').Mat} OpenCVMat */

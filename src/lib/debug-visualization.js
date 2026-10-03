@@ -5,6 +5,7 @@
 /** @typedef {import('./types.js').ProcessingResult} ProcessingResult */
 /** @typedef {import('./types.js').TestConfig} TestConfig */
 import { measureBubbleFill, DEFAULT_BIN_THRESHOLD } from './image-preprocessing';
+import { getCv } from './opencv-runtime';
 
 const COLORS = {
   allPositions: '#FF69B4',   // pink
@@ -36,7 +37,7 @@ const COLORS = {
 export function createDebugVisualization(bubbles, result, testConfig, gray, binThreshold = DEFAULT_BIN_THRESHOLD) {
   if (typeof document === 'undefined') return '';
   // Guarded by the document check above, so this only ever runs on the main thread.
-  const cv = window.cv;
+  const cv = getCv();
 
   const debugCanvas = document.createElement('canvas');
   cv.imshow(debugCanvas, gray);

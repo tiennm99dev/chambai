@@ -7,12 +7,25 @@ import ModalShell from './modal-shell';
 import PhanIAnswerGrid from './phan-i-answer-grid';
 import HighlightUnknown from './highlight-unknown';
 
+/** @typedef {import('@/lib/types').SessionResult} SessionResult */
+/** @typedef {import('@/lib/types').TrueFalseAnswer} TrueFalseAnswer */
+/** @typedef {import('@/lib/types').SubOption} SubOption */
+
+const SUB_OPTIONS = /** @type {const} */ (['a', 'b', 'c', 'd']);
+
+/** @type {Readonly<TrueFalseAnswer>} */
 const BLANK_TRUE_FALSE = { a: null, b: null, c: null, d: null };
 
 /**
  * Modal for manually correcting detected answers.
  * Shows editable answer grid with confidence-based highlighting.
  * Low-confidence detections (0.25-0.45) are highlighted for review.
+ * @param {object} props
+ * @param {SessionResult} props.student
+ * @param {import('@/lib/types').SessionConfig} props.testConfig
+ * @param {string | null} props.debugImageUrl
+ * @param {(corrected: SessionResult) => void} props.onSave
+ * @param {() => void} props.onClose
  */
 export default function ManualCorrectionModal({ student, testConfig, debugImageUrl, onSave, onClose }) {
   const [phanI, setPhanI] = useState([...student.phanI]);
@@ -41,7 +54,7 @@ export default function ManualCorrectionModal({ student, testConfig, debugImageU
     onClose();
   }, [isDirty, onClose]);
 
-  const handlePhanIChange = useCallback((index, value) => {
+  const handlePhanIChange = useCallback((/** @type {number} */ index, /** @type {string} */ value) => {
     setPhanI((prev) => {
       const next = [...prev];
       while (next.length <= index) next.push('');
@@ -50,6 +63,7 @@ export default function ManualCorrectionModal({ student, testConfig, debugImageU
     });
   }, []);
 
+  /** @param {number} questionIdx @param {SubOption} subOpt @param {boolean} targetValue */
   const handlePhanIIToggle = (questionIdx, subOpt, targetValue) => {
     setPhanII((prev) => {
       const next = prev.map((a) => ({ ...a }));
@@ -63,6 +77,7 @@ export default function ManualCorrectionModal({ student, testConfig, debugImageU
     });
   };
 
+  /** @param {number} questionIdx @param {string} value */
   const handlePhanIIIChange = (questionIdx, value) => {
     setPhanIII((prev) => {
       const next = [...prev];
@@ -174,6 +189,12 @@ export default function ManualCorrectionModal({ student, testConfig, debugImageU
   );
 }
 
+/**
+ * @param {object} props
+ * @param {TrueFalseAnswer[]} props.answers
+ * @param {TrueFalseAnswer[]} props.correctAnswers
+ * @param {(questionIdx: number, subOpt: SubOption, value: boolean) => void} props.onToggle
+ */
 function PhanIIGrid({ answers, correctAnswers, onToggle }) {
   return (
     <div className="mb-6">
@@ -184,7 +205,7 @@ function PhanIIGrid({ answers, correctAnswers, onToggle }) {
           return (
             <div key={i} className="border rounded p-2 text-sm">
               <span className="font-medium mr-2 text-gray-900">Câu {i + 1}:</span>
-              {['a', 'b', 'c', 'd'].map((opt) => {
+              {SUB_OPTIONS.map((opt) => {
                 const keyVal = correctAnswers[i]?.[opt];
                 const val = answer[opt] ?? null;
                 return (
@@ -225,6 +246,12 @@ function PhanIIGrid({ answers, correctAnswers, onToggle }) {
   );
 }
 
+/**
+ * @param {object} props
+ * @param {string[]} props.answers
+ * @param {string[]} props.correctAnswers
+ * @param {(questionIdx: number, value: string) => void} props.onChange
+ */
 function PhanIIIGrid({ answers, correctAnswers, onChange }) {
   return (
     <div>

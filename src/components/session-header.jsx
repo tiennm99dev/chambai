@@ -4,6 +4,10 @@ import { SCHEMA_VERSION } from '@/lib/types';
 
 /**
  * Header bar showing active session name with back-to-list button.
+ * @param {object} props
+ * @param {import('@/lib/types').Session} props.session
+ * @param {() => void} props.onBack
+ * @param {boolean} props.disabled
  */
 export default function SessionHeader({ session, onBack, disabled }) {
   const schemaVersion = session.config?.schemaVersion;

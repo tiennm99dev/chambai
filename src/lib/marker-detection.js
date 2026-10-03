@@ -6,6 +6,7 @@
 /** @typedef {import('./types.js').MarkerDetectionResult} MarkerDetectionResult */
 
 import { detectCornerMarkers } from './corner-marker-fallback';
+import { getCv } from './opencv-runtime';
 
 /**
  * Detect the answer sheet boundary by finding the largest rectangular contour.
@@ -16,7 +17,7 @@ import { detectCornerMarkers } from './corner-marker-fallback';
  * @returns {MarkerDetectionResult}
  */
 export function detectSheetContour(thresh, imageWidth, imageHeight) {
-  const cv = (typeof self !== 'undefined' && self.cv) || window.cv;
+  const cv = getCv();
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
   // Ownership transfers to whichever branch keeps it (see loop below); deleted in
@@ -147,7 +148,7 @@ function buildMarkerResult(c) {
  * @returns {{ corrected: OpenCVMat, markers: MarkerDetectionResult, applied: boolean }}
  */
 export function applyPerspectiveCorrection(src, markers, imageWidth, imageHeight) {
-  const cv = (typeof self !== 'undefined' && self.cv) || window.cv;
+  const cv = getCv();
 
   if (!markers.corners || markers.corners.length !== 4) {
     return { corrected: src, markers, applied: false };

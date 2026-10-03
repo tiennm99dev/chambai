@@ -6,6 +6,9 @@ import { UNKNOWN_DIGIT } from '@/lib/types';
  * Renders a detected string (SBD, mã đề, or Phần III answer), highlighting any
  * UNKNOWN_DIGIT position the detector could not read so it is never mistaken
  * for a confidently-read value.
+ * @param {object} props
+ * @param {string | null | undefined} props.value
+ * @param {string} [props.className]
  */
 export default function HighlightUnknown({ value, className = '' }) {
   if (!value) return null;

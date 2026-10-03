@@ -5,14 +5,18 @@ import { Component } from 'react';
 /**
  * Error boundary for ImageProcessor — catches render/pipeline crashes
  * and shows a recoverable error UI instead of crashing the whole page.
+ * @extends {Component<{ children?: import('react').ReactNode, onError?: (error: Error) => void }, { error: string | null }>}
  */
 export default class ImageProcessorErrorBoundary extends Component {
+  /** @type {{ error: string | null }} */
   state = { error: null };
 
+  /** @param {Error} error */
   static getDerivedStateFromError(error) {
     return { error: error.message || 'Lỗi không xác định' };
   }
 
+  /** @param {Error} error @param {import('react').ErrorInfo} info */
   componentDidCatch(error, info) {
     console.error('ImageProcessor error:', error, info);
     // A render crash here would otherwise leave the batch-processing promise

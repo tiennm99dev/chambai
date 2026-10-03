@@ -2,10 +2,25 @@
 
 import { useState } from 'react';
 import PhanIAnswerGrid from './phan-i-answer-grid';
+import { DEFAULT_SCORING } from '@/lib/scoring';
 
+/** @typedef {import('@/lib/types').SessionConfig} SessionConfig */
+/** @typedef {import('@/lib/types').SectionKey} SectionKey */
+/** @typedef {import('@/lib/types').SubOption} SubOption */
+/** @typedef {import('@/lib/types').TrueFalseAnswer} TrueFalseAnswer */
+/** @typedef {{ type: 'success'|'error', text: string }} StatusMessage */
+
+/**
+ * @param {object} props
+ * @param {SessionConfig} props.config
+ * @param {(config: SessionConfig) => void} props.onConfigChange
+ * @param {(config: SessionConfig) => void} props.onSave
+ * @param {() => void} props.onResetAll
+ */
 export default function ConfigurationPage({ config, onConfigChange, onSave, onResetAll }) {
-  const [statusMessage, setStatusMessage] = useState(null);
+  const [statusMessage, setStatusMessage] = useState(/** @type {StatusMessage | null} */ (null));
 
+  /** @param {StatusMessage['type']} type @param {string} text */
   const showStatus = (type, text) => {
     setStatusMessage({ type, text });
     setTimeout(() => setStatusMessage(null), 5000);
@@ -23,35 +38,41 @@ export default function ConfigurationPage({ config, onConfigChange, onSave, onRe
     }
   };
 
+  /** @param {number} index @param {string} answer */
   const updatePhanIAnswer = (index, answer) => {
     const newAnswers = [...config.phanI.answers];
     newAnswers[index] = answer;
     onConfigChange({ ...config, phanI: { ...config.phanI, answers: newAnswers } });
   };
 
+  /** @param {number} questionIndex @param {SubOption} option @param {boolean} value */
   const updatePhanIIAnswer = (questionIndex, option, value) => {
     const newAnswers = [...config.phanII.answers];
     // Copy the sub-option object instead of mutating in place — the previous
     // code mutated a nested object shared with activeSession.config (and with
     // DEFAULT_CONFIG for brand-new sessions), so an "unsaved" edit here could
     // silently leak into the persisted session on the next unrelated save.
+    /** @type {TrueFalseAnswer} */
     const existing = newAnswers[questionIndex] || { a: false, b: false, c: false, d: false };
     newAnswers[questionIndex] = { ...existing, [option]: value };
     onConfigChange({ ...config, phanII: { ...config.phanII, answers: newAnswers } });
   };
 
+  /** @param {number} index @param {string} answer */
   const updatePhanIIIAnswer = (index, answer) => {
     const newAnswers = [...config.phanIII.answers];
     newAnswers[index] = answer;
     onConfigChange({ ...config, phanIII: { ...config.phanIII, answers: newAnswers } });
   };
 
+  /** @param {string | TrueFalseAnswer | null | undefined} a */
   const hasEnteredAnswer = (a) => {
     if (a === undefined || a === null) return false;
     if (typeof a === 'object') return Object.values(a).some((v) => v !== null && v !== undefined && v !== false);
     return a !== '';
   };
 
+  /** @param {SectionKey} section @param {number} count */
   const updateQuestionCount = (section, count) => {
     const current = config[section];
     const currentAnswers = current.answers || [];
@@ -69,14 +90,19 @@ export default function ConfigurationPage({ config, onConfigChange, onSave, onRe
     });
   };
 
+  /** @param {SectionKey} section @param {number} value */
   const updateScoring = (section, value) => {
+    // A config without a stored scoring block is scored with DEFAULT_SCORING, so
+    // start from those values rather than writing a partial block.
+    const current = config.scoring ?? DEFAULT_SCORING;
     onConfigChange({
       ...config,
-      scoring: { ...config.scoring, [section]: { ...config.scoring[section], pointsPerQuestion: parseFloat(value) || 0 } },
+      scoring: { ...current, [section]: { ...current[section], pointsPerQuestion: value || 0 } },
     });
   };
 
   // Paste A,B,C,D answers from spreadsheet
+  /** @param {import('react').ClipboardEvent<HTMLInputElement>} e */
   const handlePasteAnswers = (e) => {
     const text = (e.clipboardData?.getData('text') || '').trim();
     const answers = text.split(/[,\t\n\s]+/)
@@ -199,6 +225,7 @@ export default function ConfigurationPage({ config, onConfigChange, onSave, onRe
   );
 }
 
+/** @type {{ key: SectionKey, label: string, defaultStored: number, isPhanII?: boolean }[]} */
 const SCORING_FIELDS = [
   { key: 'phanI', label: 'Phần I (điểm/câu)', defaultStored: 0.25 },
   // Stored as pointsPerQuestion (a quarter of the max, for historical reasons —
@@ -209,6 +236,11 @@ const SCORING_FIELDS = [
   { key: 'phanIII', label: 'Phần III (điểm/câu)', defaultStored: 0.5 },
 ];
 
+/**
+ * @param {object} props
+ * @param {SessionConfig} props.config
+ * @param {(section: SectionKey, value: number) => void} props.onUpdate
+ */
 function ScoringConfig({ config, onUpdate }) {
   return (
     <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
@@ -243,6 +275,12 @@ function ScoringConfig({ config, onUpdate }) {
   );
 }
 
+/**
+ * @param {object} props
+ * @param {SessionConfig} props.config
+ * @param {(questionIndex: number, option: SubOption, value: boolean) => void} props.onUpdate
+ * @param {(section: SectionKey, count: number) => void} props.onCountChange
+ */
 function PhanIISection({ config, onUpdate, onCountChange }) {
   return (
     <div className="border border-gray-200 rounded-lg p-6">
@@ -262,7 +300,7 @@ function PhanIISection({ config, onUpdate, onCountChange }) {
           <div key={i} className="border border-gray-200 rounded-lg p-4">
             <h4 className="font-medium mb-3 text-gray-900">Câu {i + 1}:</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {['a', 'b', 'c', 'd'].map((option) => (
+              {/** @type {const} */ (['a', 'b', 'c', 'd']).map((option) => (
                 <div key={option} className="flex items-center gap-2">
                   <span className="text-sm font-medium w-4">{option.toUpperCase()}:</span>
                   <div className="flex gap-1">
@@ -291,6 +329,12 @@ function PhanIISection({ config, onUpdate, onCountChange }) {
   );
 }
 
+/**
+ * @param {object} props
+ * @param {SessionConfig} props.config
+ * @param {(index: number, answer: string) => void} props.onUpdate
+ * @param {(section: SectionKey, count: number) => void} props.onCountChange
+ */
 function PhanIIISection({ config, onUpdate, onCountChange }) {
   return (
     <div className="border border-gray-200 rounded-lg p-6">

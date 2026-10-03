@@ -1,4 +1,15 @@
+/** @typedef {'config'|'upload'|'results'} PageKey */
+
+/**
+ * @param {object} props
+ * @param {PageKey} props.currentPage
+ * @param {(page: PageKey) => void} props.onPageChange
+ * @param {boolean} props.configSaved
+ * @param {boolean} props.hasResults
+ * @param {boolean} props.locked
+ */
 export default function Navigation({ currentPage, onPageChange, configSaved, hasResults, locked }) {
+  /** @type {{ key: PageKey, label: string, description: string, done: boolean, disabled?: boolean }[]} */
   const buttons = [
     {
       key: 'config',
